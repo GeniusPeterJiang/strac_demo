@@ -8,6 +8,8 @@ import uuid
 import logging
 import boto3
 from typing import Dict, Any, Optional
+from datetime import datetime, date
+from decimal import Decimal
 from botocore.exceptions import ClientError
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -19,6 +21,15 @@ logger = logging.getLogger(__name__)
 # Initialize AWS clients
 sqs_client = boto3.client('sqs', region_name=os.getenv('AWS_REGION', 'us-west-2'))
 s3_client = boto3.client('s3', region_name=os.getenv('AWS_REGION', 'us-west-2'))
+
+
+def json_serial(obj):
+    """JSON serializer for objects not serializable by default json code."""
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 
 def get_db_connection():
@@ -55,7 +66,7 @@ def create_response(status_code: int, body: Dict[str, Any],
     return {
         "statusCode": status_code,
         "headers": default_headers,
-        "body": json.dumps(body)
+        "body": json.dumps(body, default=json_serial)
     }
 
 

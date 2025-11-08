@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS findings (
     job_id UUID NOT NULL,
     bucket TEXT NOT NULL,
     key TEXT NOT NULL,
+    etag TEXT,
     detector TEXT NOT NULL,
     masked_match TEXT NOT NULL,
     context TEXT,
@@ -45,15 +46,6 @@ CREATE TABLE IF NOT EXISTS findings (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (bucket, key, etag, detector, byte_offset)
 );
-
--- Add etag column if not exists (for deduplication)
-DO $$ 
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                   WHERE table_name='findings' AND column_name='etag') THEN
-        ALTER TABLE findings ADD COLUMN etag TEXT;
-    END IF;
-END $$;
 
 CREATE INDEX IF NOT EXISTS idx_findings_job_id ON findings(job_id);
 CREATE INDEX IF NOT EXISTS idx_findings_bucket_key ON findings(bucket, key);
@@ -98,18 +90,17 @@ SELECT
     j.job_id,
     j.bucket,
     j.prefix,
-    j.status,
-    j.total_objects,
-    COUNT(jo.id) FILTER (WHERE jo.status = 'queued') as queued_count,
-    COUNT(jo.id) FILTER (WHERE jo.status = 'processing') as processing_count,
-    COUNT(jo.id) FILTER (WHERE jo.status = 'succeeded') as succeeded_count,
-    COUNT(jo.id) FILTER (WHERE jo.status = 'failed') as failed_count,
-    SUM(jo.findings_count) as total_findings,
     j.created_at,
-    j.updated_at
+    j.updated_at,
+    COUNT(DISTINCT (jo.bucket, jo.key, jo.etag)) as total_objects,
+    COUNT(*) FILTER (WHERE jo.status = 'queued') as queued_count,
+    COUNT(*) FILTER (WHERE jo.status = 'processing') as processing_count,
+    COUNT(*) FILTER (WHERE jo.status = 'succeeded') as succeeded_count,
+    COUNT(*) FILTER (WHERE jo.status = 'failed') as failed_count,
+    (SELECT COUNT(*) FROM findings f WHERE f.job_id = j.job_id) as total_findings
 FROM jobs j
 LEFT JOIN job_objects jo ON j.job_id = jo.job_id
-GROUP BY j.job_id, j.bucket, j.prefix, j.status, j.total_objects, j.created_at, j.updated_at;
+GROUP BY j.job_id, j.bucket, j.prefix, j.created_at, j.updated_at;
 
 -- Grant permissions (adjust as needed for your RDS user)
 -- GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO scanner_admin;

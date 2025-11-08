@@ -135,23 +135,34 @@ psql -h $RDS_ENDPOINT -U strac_admin -d scanner_db -f database_schema.sql
 ### 7. Test the API
 
 ```bash
-# Get API URL
+# Get infrastructure details
+cd terraform
 API_URL=$(terraform output -raw api_gateway_url)
+BUCKET=$(terraform output -raw s3_bucket_name)
 
 # Create a test file in S3
-BUCKET=$(terraform output -raw ecr_repository_url | cut -d/ -f1 | sed 's/697547269674.dkr.ecr.us-west-2.amazonaws.com/strac-scanner-demo-697547269674/')
-echo "My SSN is 123-45-6789" | aws s3 cp - s3://$BUCKET/test/file.txt
+echo "My SSN is 123-45-6789 and my credit card is 4532-1234-5678-9010" | \
+  aws s3 cp - s3://$BUCKET/test/file.txt
 
 # Trigger a scan
-curl -X POST "${API_URL}/scan" \
+JOB_RESPONSE=$(curl -s -X POST "${API_URL}/scan" \
   -H "Content-Type: application/json" \
-  -d "{\"bucket\": \"$BUCKET\", \"prefix\": \"test/\"}"
+  -d "{\"bucket\": \"$BUCKET\", \"prefix\": \"test/\"}")
 
-# Save the job_id from the response, then check status:
-# curl "${API_URL}/jobs/<job_id>"
+echo "Scan triggered:"
+echo $JOB_RESPONSE | jq .
 
-# Get results:
-# curl "${API_URL}/results?job_id=<job_id>"
+# Extract job_id and check status
+JOB_ID=$(echo $JOB_RESPONSE | jq -r '.job_id')
+echo ""
+echo "Checking job status..."
+curl -s "${API_URL}/jobs/${JOB_ID}" | jq .
+
+# Wait a moment and get results
+sleep 5
+echo ""
+echo "Getting scan results..."
+curl -s "${API_URL}/results?job_id=${JOB_ID}" | jq .
 ```
 
 ## Verification Checklist
