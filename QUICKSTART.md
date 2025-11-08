@@ -82,8 +82,11 @@ Now that ECR repositories exist, build and push the Docker images:
 ```bash
 cd /home/peterjiang/strac_demo
 
-# If you get Docker permission errors, use sudo:
-sudo ./build_and_push.sh
+# Run the build script (it will guide you if there are permission issues)
+./build_and_push.sh
+
+# If you get Docker permission errors, use sudo with -E flag (preserves environment):
+# sudo -E ./build_and_push.sh
 
 # Or add your user to docker group (requires logout):
 # sudo usermod -aG docker $USER
@@ -107,14 +110,25 @@ terraform apply  # Creates Lambda and remaining resources
 
 ### 6. Initialize Database
 
-After Terraform completes successfully:
+After Terraform completes successfully, initialize the database schema:
 
 ```bash
-# Get RDS endpoint
-RDS_ENDPOINT=$(terraform output -raw rds_proxy_endpoint | cut -d: -f1)
+cd /home/peterjiang/strac_demo
+./init_database.sh
+```
 
-# Connect and run schema
-psql -h $RDS_ENDPOINT -U scanner_admin -d scanner_db -f database_schema.sql
+This script will:
+- Automatically read credentials from `terraform.tfvars`
+- Get RDS endpoint from Terraform outputs
+- Test database connectivity
+- Create all required tables (jobs, job_objects, findings)
+- Verify tables were created successfully
+
+**Manual method** (if you prefer):
+```bash
+cd terraform
+RDS_ENDPOINT=$(terraform output -raw rds_proxy_endpoint | cut -d: -f1)
+psql -h $RDS_ENDPOINT -U strac_admin -d scanner_db -f database_schema.sql
 # Enter password when prompted
 ```
 
