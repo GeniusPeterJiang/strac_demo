@@ -16,7 +16,7 @@ This document verifies that all requirements from the specification are met.
 
 - [x] **ECS Fargate service scanner-worker (private)**
   - Location: `terraform/modules/ecs/main.tf`
-  - Service name: `s3-scanner-scanner-service`
+  - Service name: `strac-scanner-scanner-service`
   - Deployed in private subnets
   - Consumes SQS messages
 
@@ -43,12 +43,12 @@ This document verifies that all requirements from the specification are met.
 
 - [x] **SQS queues: scan-jobs with visibility timeout**
   - Location: `terraform/modules/sqs/main.tf`
-  - Queue name: `s3-scanner-scan-jobs`
+  - Queue name: `strac-scanner-scan-jobs`
   - Visibility timeout: 300 seconds (configurable)
 
 - [x] **SQS queues: scan-jobs-dlq with max receives = 3**
   - Location: `terraform/modules/sqs/main.tf`
-  - DLQ name: `s3-scanner-scan-jobs-dlq`
+  - DLQ name: `strac-scanner-scan-jobs-dlq`
   - maxReceiveCount: 3 (configurable)
 
 - [x] **Autoscaling for scanner-worker**
@@ -63,7 +63,7 @@ This document verifies that all requirements from the specification are met.
 
 - [x] **S3 bucket with sample files**
   - Location: `terraform/main.tf` (line ~40)
-  - Bucket: `s3-scanner-demo-{account-id}`
+  - Bucket: `strac-scanner-demo-{account-id}`
 
 ## ✅ Scanner (Dockerized on ECS Fargate)
 

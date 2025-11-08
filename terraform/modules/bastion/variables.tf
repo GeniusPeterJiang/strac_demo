@@ -26,6 +26,6 @@ variable "rds_security_group_id" {
 variable "key_pair_name" {
   description = "EC2 Key Pair name for bastion host"
   type        = string
-  default     = "s3-scanner-bastion-key"
+  default     = "strac-scanner-bastion-key"
 }
 

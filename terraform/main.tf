@@ -270,6 +270,6 @@ module "bastion" {
   public_subnet_ids  = module.vpc.public_subnet_ids
   allowed_cidr_blocks = var.allowed_cidr_blocks
   rds_security_group_id = module.rds.security_group_id
-  key_pair_name      = "s3-scanner-bastion-key" # Create this key pair first
+  key_pair_name      = "strac-scanner-bastion-key" # Create this key pair first
 }
 

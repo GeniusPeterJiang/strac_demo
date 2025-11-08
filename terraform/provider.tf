@@ -11,7 +11,7 @@ terraform {
   # Optional: Backend configuration for state management
   # backend "s3" {
   #   bucket = "your-terraform-state-bucket"
-  #   key    = "s3-scanner/terraform.tfstate"
+  #   key    = "strac-scanner/terraform.tfstate"
   #   region = "us-west-2"
   # }
 }

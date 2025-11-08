@@ -58,7 +58,7 @@ resource "aws_iam_instance_profile" "bastion" {
 }
 
 # EC2 Key Pair
-# Create a key pair first: aws ec2 create-key-pair --key-name s3-scanner-bastion-key --query 'KeyMaterial' --output text > bastion-key.pem
+# Create a key pair first: aws ec2 create-key-pair --key-name strac-scanner-bastion-key --query 'KeyMaterial' --output text > bastion-key.pem
 # Or use an existing key pair name
 # Use data source if key pair exists, otherwise create a placeholder
 # Note: You must create the key pair manually before deploying

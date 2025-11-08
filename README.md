@@ -117,7 +117,7 @@ GET /jobs/{job_id} and GET /results:
 ## Project Structure
 
 ```
-aws-s3-scanner/
+aws-strac-scanner/
 ├── terraform/              # Infrastructure as Code
 │   ├── main.tf            # Main Terraform configuration
 │   ├── provider.tf        # AWS provider configuration
@@ -167,7 +167,7 @@ Create a `terraform/terraform.tfvars` file:
 aws_region      = "us-west-2"
 aws_account_id  = "697547269674"
 environment     = "dev"
-project_name    = "s3-scanner"
+project_name    = "strac-scanner"
 
 rds_master_username = "scanner_admin"
 rds_master_password = "YourSecurePassword123!" # Change this!
@@ -213,9 +213,9 @@ psql -h $RDS_ENDPOINT -U scanner_admin -d scanner_db -f database_schema.sql
 ```bash
 # Build scanner image
 cd ../scanner
-docker build -t s3-scanner:latest .
+docker build -t strac-scanner:latest .
 aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin <ECR_REPO_URL>
-docker tag s3-scanner:latest <ECR_REPO_URL>:latest
+docker tag strac-scanner:latest <ECR_REPO_URL>:latest
 docker push <ECR_REPO_URL>:latest
 
 # Build Lambda API image
@@ -399,7 +399,7 @@ The application code automatically uses the configured AWS region from environme
 
 ### ECS Tasks Not Processing
 
-1. Check CloudWatch Logs: `/ecs/s3-scanner-scanner`
+1. Check CloudWatch Logs: `/ecs/strac-scanner-scanner`
 2. Verify SQS queue has messages: `aws sqs get-queue-attributes --queue-url <URL>`
 3. Check ECS service desired count matches running tasks
 4. Verify IAM roles have correct permissions

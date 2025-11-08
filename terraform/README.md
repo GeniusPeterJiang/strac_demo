@@ -25,7 +25,7 @@ This directory contains Terraform configuration for deploying the S3 Sensitive D
 aws_region      = "us-west-2"
 aws_account_id  = "697547269674"
 environment     = "dev"
-project_name    = "s3-scanner"
+project_name    = "strac-scanner"
 
 rds_master_username = "scanner_admin"
 rds_master_password = "YourSecurePassword123!"

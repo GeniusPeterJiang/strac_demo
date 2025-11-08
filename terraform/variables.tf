@@ -19,7 +19,7 @@ variable "environment" {
 variable "project_name" {
   description = "Project name prefix for resources"
   type        = string
-  default     = "s3-scanner"
+  default     = "strac-scanner"
 }
 
 variable "vpc_cidr" {

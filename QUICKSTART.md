@@ -21,7 +21,7 @@ Create `terraform/terraform.tfvars`:
 aws_region      = "us-west-2"
 aws_account_id  = "697547269674"
 environment     = "dev"
-project_name    = "s3-scanner"
+project_name    = "strac-scanner"
 
 rds_master_username = "scanner_admin"
 rds_master_password = "ChangeThisPassword123!"  # IMPORTANT: Change this!
@@ -36,7 +36,7 @@ scanner_batch_size = 10
 
 ```bash
 aws ec2 create-key-pair \
-  --key-name s3-scanner-bastion-key \
+  --key-name strac-scanner-bastion-key \
   --query 'KeyMaterial' \
   --output text > bastion-key.pem
 
@@ -80,8 +80,8 @@ aws ecr get-login-password --region us-west-2 | \
 
 # Build and push scanner image
 cd ../scanner
-docker build -t s3-scanner:latest .
-docker tag s3-scanner:latest $SCANNER_REPO:latest
+docker build -t strac-scanner:latest .
+docker tag strac-scanner:latest $SCANNER_REPO:latest
 docker push $SCANNER_REPO:latest
 
 # Build and push Lambda API image
@@ -122,7 +122,7 @@ aws lambda update-function-code \
 API_URL=$(terraform output -raw api_gateway_url)
 
 # Create a test file in S3
-BUCKET=$(terraform output -raw ecr_repository_url | cut -d/ -f1 | sed 's/697547269674.dkr.ecr.us-west-2.amazonaws.com/s3-scanner-demo-697547269674/')
+BUCKET=$(terraform output -raw ecr_repository_url | cut -d/ -f1 | sed 's/697547269674.dkr.ecr.us-west-2.amazonaws.com/strac-scanner-demo-697547269674/')
 echo "My SSN is 123-45-6789" | aws s3 cp - s3://$BUCKET/test/file.txt
 
 # Trigger a scan
@@ -167,7 +167,7 @@ curl -X POST "${API_URL}/scan" \
 ### API Returns 500
 
 - **Issue**: Lambda function error
-- **Fix**: Check CloudWatch Logs: `/aws/lambda/s3-scanner-api`
+- **Fix**: Check CloudWatch Logs: `/aws/lambda/strac-scanner-api`
 
 ## Next Steps
 

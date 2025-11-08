@@ -21,7 +21,7 @@ Create a script to upload 500+ test files with various sensitive data patterns:
 # upload_test_files.sh
 # Uploads 500+ small files to S3 for testing
 
-BUCKET="s3-scanner-demo-697547269674"  # From Terraform output
+BUCKET="strac-scanner-demo-697547269674"  # From Terraform output
 REGION="us-west-2"
 PREFIX="test/"  # Prefix for test files
 
@@ -95,7 +95,7 @@ import random
 import string
 
 s3 = boto3.client('s3', region_name='us-west-2')
-bucket = 's3-scanner-demo-697547269674'
+bucket = 'strac-scanner-demo-697547269674'
 prefix = 'test/'
 
 # Generate 500+ files
@@ -141,7 +141,7 @@ echo "API URL: $API_URL"
 curl -X POST "${API_URL}/scan" \
   -H "Content-Type: application/json" \
   -d '{
-    "bucket": "s3-scanner-demo-697547269674",
+    "bucket": "strac-scanner-demo-697547269674",
     "prefix": "test/"
   }'
 
@@ -196,7 +196,7 @@ curl "${API_URL}/results?limit=10&offset=0"
 curl "${API_URL}/results?limit=10&offset=10"
 
 # Filter by bucket
-curl "${API_URL}/results?bucket=s3-scanner-demo-697547269674"
+curl "${API_URL}/results?bucket=strac-scanner-demo-697547269674"
 
 # Filter by prefix (using key parameter)
 curl "${API_URL}/results?key=test/"
@@ -244,13 +244,13 @@ aws sqs get-queue-attributes \
 **Using AWS Console:**
 
 1. Navigate to **SQS** in AWS Console
-2. Click on the queue name: `s3-scanner-scan-jobs`
+2. Click on the queue name: `strac-scanner-scan-jobs`
 3. View the **Monitoring** tab to see:
    - **ApproximateNumberOfMessagesVisible** - Current queue depth
    - **ApproximateAgeOfOldestMessage** - Age of oldest message
    - **NumberOfMessagesReceived** - Total messages received
    - **NumberOfMessagesSent** - Total messages sent
-4. For DLQ, click on `s3-scanner-scan-jobs-dlq` to see failed messages
+4. For DLQ, click on `strac-scanner-scan-jobs-dlq` to see failed messages
 
 **Continuous Monitoring Script:**
 
@@ -319,10 +319,10 @@ aws ecs list-tasks \
 
 ```bash
 # View scanner logs
-aws logs tail /ecs/s3-scanner-scanner --follow
+aws logs tail /ecs/strac-scanner-scanner --follow
 
 # View Lambda API logs
-aws logs tail /aws/lambda/s3-scanner-api --follow
+aws logs tail /aws/lambda/strac-scanner-api --follow
 ```
 
 ## 4. Load Testing
@@ -338,7 +338,7 @@ import random
 import string
 
 s3 = boto3.client('s3', region_name='us-west-2')
-bucket = 's3-scanner-demo-697547269674'
+bucket = 'strac-scanner-demo-697547269674'
 
 # Generate 1000 files with random sensitive data
 for i in range(1000):
@@ -377,7 +377,7 @@ python3 generate_test_data.py
 curl -X POST "${API_URL}/scan" \
   -H "Content-Type: application/json" \
   -d '{
-    "bucket": "s3-scanner-demo-697547269674",
+    "bucket": "strac-scanner-demo-697547269674",
     "prefix": "load-test/"
   }'
 ```
@@ -475,7 +475,7 @@ API_URL = "https://<your-api-gateway-url>"
 # Trigger scan
 response = requests.post(
     f"{API_URL}/scan",
-    json={"bucket": "s3-scanner-demo-697547269674", "prefix": "load-test/"}
+    json={"bucket": "strac-scanner-demo-697547269674", "prefix": "load-test/"}
 )
 job_id = response.json()["job_id"]
 print(f"Job ID: {job_id}")
@@ -518,7 +518,7 @@ print(f"Average rate: {succeeded/total_time:.2f} files/sec")
 set -e
 
 API_URL=$(cd terraform && terraform output -raw api_gateway_url)
-BUCKET="s3-scanner-demo-697547269674"
+BUCKET="strac-scanner-demo-697547269674"
 
 echo "=== Integration Test ==="
 echo "API URL: $API_URL"
@@ -574,9 +574,9 @@ fi
 
 ```bash
 # Delete test files
-aws s3 rm s3://s3-scanner-demo-697547269674/test/ --recursive
-aws s3 rm s3://s3-scanner-demo-697547269674/bulk/ --recursive
-aws s3 rm s3://s3-scanner-demo-697547269674/load-test/ --recursive
+aws s3 rm s3://strac-scanner-demo-697547269674/test/ --recursive
+aws s3 rm s3://strac-scanner-demo-697547269674/bulk/ --recursive
+aws s3 rm s3://strac-scanner-demo-697547269674/load-test/ --recursive
 ```
 
 ## 10. Continuous Monitoring
@@ -592,7 +592,7 @@ Set up CloudWatch dashboards to monitor:
 ## Troubleshooting Test Issues
 
 ### API Returns 500 Error
-- Check Lambda logs: `aws logs tail /aws/lambda/s3-scanner-api --follow`
+- Check Lambda logs: `aws logs tail /aws/lambda/strac-scanner-api --follow`
 - Verify environment variables are set correctly
 - Check IAM permissions
 
