@@ -82,8 +82,11 @@ Now that ECR repositories exist, build and push the Docker images:
 ```bash
 cd /home/peterjiang/strac_demo
 
-# If you get Docker permission errors, use sudo:
-sudo ./build_and_push.sh
+# Run the build script (it will guide you if there are permission issues)
+./build_and_push.sh
+
+# If you get Docker permission errors, use sudo with -E flag (preserves environment):
+# sudo -E ./build_and_push.sh
 
 # Or add your user to docker group (requires logout):
 # sudo usermod -aG docker $USER
