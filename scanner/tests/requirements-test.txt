@@ -1,0 +1,22 @@
+# Testing Framework
+pytest>=7.4.0
+pytest-cov>=4.1.0          # Coverage reporting
+pytest-mock>=3.11.1         # Better mocking
+pytest-xdist>=3.3.1         # Parallel execution
+pytest-timeout>=2.1.0       # Test timeouts
+pytest-benchmark>=4.0.0     # Performance benchmarking
+
+# Code Quality
+black>=23.7.0               # Code formatting
+flake8>=6.1.0              # Linting
+mypy>=1.5.0                # Type checking
+isort>=5.12.0              # Import sorting
+
+# Coverage
+coverage[toml]>=7.3.0
+
+# Mocking and Fixtures (optional, for future enhancement)
+# factory-boy>=3.3.0        # Test data factories
+# faker>=19.6.0             # Fake data generation
+# responses>=0.23.3         # Mock HTTP responses
+

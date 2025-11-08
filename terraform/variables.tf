@@ -37,7 +37,7 @@ variable "availability_zones" {
 variable "rds_instance_class" {
   description = "RDS instance class"
   type        = string
-  default     = "db.t3.medium"
+  default     = "db.t4g.micro" # Free tier eligible
 }
 
 variable "rds_allocated_storage" {

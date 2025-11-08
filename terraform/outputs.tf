@@ -52,7 +52,7 @@ output "api_gateway_url" {
 
 output "bastion_public_ip" {
   description = "Bastion host public IP"
-  value       = module.bastion.public_ip
+  value       = var.enable_bastion ? module.bastion[0].public_ip : null
 }
 
 output "ecr_repository_url" {

@@ -8,6 +8,11 @@ variable "vpc_id" {
   type        = string
 }
 
+variable "security_group_id" {
+  description = "Security group ID for ECS tasks"
+  type        = string
+}
+
 variable "private_subnet_ids" {
   description = "Private subnet IDs"
   type        = list(string)

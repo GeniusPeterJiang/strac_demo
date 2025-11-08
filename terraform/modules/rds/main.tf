@@ -38,7 +38,7 @@ resource "aws_db_subnet_group" "main" {
 resource "aws_db_instance" "main" {
   identifier             = "${var.project_name}-db"
   engine                 = "postgres"
-  engine_version         = "15.4"
+  engine_version         = "15.14"
   instance_class         = var.instance_class
   allocated_storage      = var.allocated_storage
   max_allocated_storage  = var.max_allocated_storage
@@ -73,6 +73,7 @@ resource "aws_db_instance" "main" {
 resource "aws_db_proxy" "main" {
   name                   = "${var.project_name}-proxy"
   engine_family          = "POSTGRESQL"
+  role_arn               = aws_iam_role.rds_proxy.arn
   vpc_subnet_ids         = var.private_subnet_ids
   vpc_security_group_ids = [aws_security_group.rds_proxy.id]
 
@@ -86,11 +87,17 @@ resource "aws_db_proxy" "main" {
   tags = {
     Name = "${var.project_name}-proxy"
   }
+  
+  depends_on = [
+    aws_db_instance.main,
+    aws_iam_role_policy.rds_proxy,
+    aws_secretsmanager_secret_version.rds_proxy
+  ]
 }
 
 # RDS Proxy Target
 resource "aws_db_proxy_target" "main" {
-  db_instance_identifier = aws_db_instance.main.id
+  db_instance_identifier = aws_db_instance.main.identifier
   db_proxy_name          = aws_db_proxy.main.name
   target_group_name      = "default"
 }

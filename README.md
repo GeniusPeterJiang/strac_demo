@@ -210,25 +210,15 @@ psql -h $RDS_ENDPOINT -U scanner_admin -d scanner_db -f database_schema.sql
 
 ### 4. Build and Push Container Images
 
-```bash
-# Build scanner image
-cd ../scanner
-docker build -t strac-scanner:latest .
-aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin <ECR_REPO_URL>
-docker tag strac-scanner:latest <ECR_REPO_URL>:latest
-docker push <ECR_REPO_URL>:latest
+**Automated deployment:**
 
-# Build Lambda API image
-cd ../lambda_api
-docker build -t lambda-api:latest .
-aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin <LAMBDA_ECR_REPO_URL>
-docker tag lambda-api:latest <LAMBDA_ECR_REPO_URL>:latest
-docker push <LAMBDA_ECR_REPO_URL>:latest
+```bash
+./build_and_push.sh
 ```
 
-### 5. Update ECS Service and Lambda
+This builds Docker images, pushes to ECR, and updates ECS/Lambda automatically.
 
-After pushing images, update the ECS service and Lambda function to use the new images.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for manual deployment steps and troubleshooting.
 
 ## API Endpoints
 

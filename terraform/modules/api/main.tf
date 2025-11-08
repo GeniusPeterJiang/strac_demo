@@ -20,6 +20,10 @@ resource "aws_iam_role" "lambda_api" {
   }
 }
 
+# Data sources for ARN construction
+data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
+
 # IAM Policy for Lambda
 resource "aws_iam_role_policy" "lambda_api" {
   name = "${var.project_name}-lambda-api-policy"
@@ -35,7 +39,7 @@ resource "aws_iam_role_policy" "lambda_api" {
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = "${var.log_group_name}:*"
+        Resource = "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:${var.log_group_name}:*"
       },
       {
         Effect = "Allow"
@@ -93,7 +97,7 @@ resource "aws_lambda_function" "api" {
       RDS_PROXY_ENDPOINT = var.rds_proxy_endpoint
       RDS_USERNAME       = var.rds_master_username
       RDS_PASSWORD       = var.rds_master_password
-      AWS_REGION         = data.aws_region.current.name
+      # AWS_REGION is automatically set by Lambda - don't override it
     }
   }
 
@@ -112,12 +116,18 @@ resource "aws_lambda_function" "api" {
 }
 
 # CloudWatch Log Group for Lambda
+# Note: Lambda auto-creates this, but we manage it to set retention
 resource "aws_cloudwatch_log_group" "lambda" {
   name              = var.log_group_name
   retention_in_days = 7
 
   tags = {
     Name = "${var.project_name}-lambda-api-logs"
+  }
+
+  lifecycle {
+    # Prevent recreation if settings change
+    ignore_changes = [name]
   }
 }
 
@@ -214,8 +224,6 @@ resource "aws_lambda_permission" "api_gateway" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
 }
-
-data "aws_region" "current" {}
 
 # Outputs
 output "api_gateway_url" {

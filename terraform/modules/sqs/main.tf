@@ -27,14 +27,14 @@ resource "aws_sqs_queue" "dlq" {
 
 # CloudWatch Metric Alarm for queue depth
 resource "aws_cloudwatch_metric_alarm" "queue_depth" {
-  name          = "${var.project_name}-sqs-queue-depth"
-  alarm_description = "Alert when SQS queue depth is high"
-  metric_name  = "ApproximateNumberOfMessagesVisible"
-  namespace    = "AWS/SQS"
-  statistic    = "Average"
-  period       = 60
-  evaluation_periods = 1
-  threshold    = 1000
+  alarm_name          = "${var.project_name}-sqs-queue-depth"
+  alarm_description   = "Alert when SQS queue depth is high"
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  statistic           = "Average"
+  period              = 60
+  evaluation_periods  = 1
+  threshold           = 1000
   comparison_operator = "GreaterThanThreshold"
 
   dimensions = {
@@ -48,14 +48,14 @@ resource "aws_cloudwatch_metric_alarm" "queue_depth" {
 
 # CloudWatch Metric Alarm for message age
 resource "aws_cloudwatch_metric_alarm" "message_age" {
-  name          = "${var.project_name}-sqs-message-age"
-  alarm_description = "Alert when oldest message age is high"
-  metric_name  = "ApproximateAgeOfOldestMessage"
-  namespace    = "AWS/SQS"
-  statistic    = "Average"
-  period       = 300
-  evaluation_periods = 1
-  threshold    = 600 # 10 minutes
+  alarm_name          = "${var.project_name}-sqs-message-age"
+  alarm_description   = "Alert when oldest message age is high"
+  metric_name         = "ApproximateAgeOfOldestMessage"
+  namespace           = "AWS/SQS"
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 600 # 10 minutes
   comparison_operator = "GreaterThanThreshold"
 
   dimensions = {

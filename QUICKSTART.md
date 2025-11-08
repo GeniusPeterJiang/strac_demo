@@ -11,6 +11,17 @@ This guide will help you get the S3 Sensitive Data Scanner up and running quickl
 - [ ] Python 3.12 installed (for local testing)
 - [ ] PostgreSQL client installed (for database setup)
 
+## Local Testing (No AWS Required)
+
+Before deploying to AWS, you can test the scanner locally:
+
+```bash
+cd scanner/tests
+./run_tests.sh
+```
+
+This runs **72 pytest tests** covering pattern detection, database operations, batch processing, and integration workflows without requiring AWS infrastructure.
+
 ## Step-by-Step Deployment
 
 ### 1. Configure Terraform Variables
@@ -38,25 +49,65 @@ scanner_batch_size = 10
 aws ec2 create-key-pair \
   --key-name strac-scanner-bastion-key \
   --query 'KeyMaterial' \
-  --output text > bastion-key.pem
+  --output text > ~/strac-scanner-bastion-key.pem
 
-chmod 400 bastion-key.pem
+chmod 400 ~/strac-scanner-bastion-key.pem
 ```
 
-### 3. Deploy Infrastructure
+### 3. Deploy Infrastructure (Stage 1: Core Infrastructure)
+
+Deploy core infrastructure including ECR repositories (but skip Lambda for now):
 
 ```bash
 cd terraform
 terraform init
-terraform plan  # Review the plan
-terraform apply # Type 'yes' when prompted
+
+# Apply everything except Lambda (which needs Docker images first)
+terraform apply -target=aws_ecr_repository.scanner \
+                -target=aws_ecr_repository.lambda_api \
+                -target=module.vpc \
+                -target=module.rds \
+                -target=module.sqs \
+                -target=module.ecs \
+                -target=aws_s3_bucket.demo \
+                -target=module.bastion
 ```
 
-**Note**: This will take 15-20 minutes to complete. Grab a coffee! ☕
+**Note**: This creates ECR repositories and core infrastructure. Takes ~10-15 minutes.
 
-### 4. Initialize Database
+### 4. Build and Push Container Images
 
-After Terraform completes:
+Now that ECR repositories exist, build and push the Docker images:
+
+```bash
+cd /home/peterjiang/strac_demo
+
+# If you get Docker permission errors, use sudo:
+sudo ./build_and_push.sh
+
+# Or add your user to docker group (requires logout):
+# sudo usermod -aG docker $USER
+```
+
+This script will:
+- Build both Docker images (scanner + lambda)
+- Push to ECR
+- Update ECS service (if it exists)
+
+### 5. Deploy Infrastructure (Stage 2: Complete)
+
+Complete the deployment with Lambda function (now that images exist):
+
+```bash
+cd terraform
+terraform apply  # Creates Lambda and remaining resources
+```
+
+**Note**: This final apply takes ~5 minutes. Now grab that coffee! ☕
+
+### 6. Initialize Database
+
+After Terraform completes successfully:
 
 ```bash
 # Get RDS endpoint
@@ -67,55 +118,7 @@ psql -h $RDS_ENDPOINT -U scanner_admin -d scanner_db -f database_schema.sql
 # Enter password when prompted
 ```
 
-### 5. Build and Push Container Images
-
-```bash
-# Get ECR repository URLs
-SCANNER_REPO=$(terraform output -raw ecr_repository_url)
-LAMBDA_REPO=$(terraform output -raw ecr_repository_url | sed 's/scanner/lambda-api/')
-
-# Login to ECR
-aws ecr get-login-password --region us-west-2 | \
-  docker login --username AWS --password-stdin $SCANNER_REPO
-
-# Build and push scanner image
-cd ../scanner
-docker build -t strac-scanner:latest .
-docker tag strac-scanner:latest $SCANNER_REPO:latest
-docker push $SCANNER_REPO:latest
-
-# Build and push Lambda API image
-cd ../lambda_api
-docker build -t lambda-api:latest .
-docker tag lambda-api:latest $LAMBDA_REPO:latest
-docker push $LAMBDA_REPO:latest
-```
-
-### 6. Update ECS Service
-
-After pushing images, update the ECS service to use the new image:
-
-```bash
-CLUSTER=$(terraform output -raw ecs_cluster_name)
-SERVICE=$(terraform output -raw ecs_service_name)
-
-aws ecs update-service \
-  --cluster $CLUSTER \
-  --service $SERVICE \
-  --force-new-deployment
-```
-
-### 7. Update Lambda Function
-
-```bash
-LAMBDA_FUNC=$(terraform output -raw lambda_api_function_name)
-
-aws lambda update-function-code \
-  --function-name $LAMBDA_FUNC \
-  --image-uri $LAMBDA_REPO:latest
-```
-
-### 8. Test the API
+### 7. Test the API
 
 ```bash
 # Get API URL

@@ -22,24 +22,7 @@ resource "aws_cloudwatch_log_group" "ecs" {
   }
 }
 
-# Security Group for ECS Tasks
-resource "aws_security_group" "ecs" {
-  name        = "${var.project_name}-ecs-sg"
-  description = "Security group for ECS tasks"
-  vpc_id      = var.vpc_id
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
-  }
-
-  tags = {
-    Name = "${var.project_name}-ecs-sg"
-  }
-}
+# Security Group for ECS Tasks is created in main.tf and passed as a variable
 
 # ECS Task Definition
 resource "aws_ecs_task_definition" "scanner" {
@@ -119,7 +102,7 @@ resource "aws_ecs_service" "scanner" {
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [data.aws_security_group.ecs.id]
+    security_groups  = [var.security_group_id]
     assign_public_ip = false
   }
 
@@ -173,12 +156,10 @@ resource "aws_appautoscaling_policy" "ecs_sqs_depth" {
       metric_name = "ApproximateNumberOfMessagesVisible"
       namespace   = "AWS/SQS"
       statistic   = "Average"
-      dimensions = [
-        {
-          name  = "QueueName"
-          value = split("/", var.sqs_queue_url)[length(split("/", var.sqs_queue_url)) - 1]
-        }
-      ]
+      dimensions {
+        name  = "QueueName"
+        value = split("/", var.sqs_queue_url)[length(split("/", var.sqs_queue_url)) - 1]
+      }
     }
     target_value       = 10.0 # Scale when queue has more than 10 messages per task
     scale_in_cooldown  = 300
