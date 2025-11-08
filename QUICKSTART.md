@@ -49,9 +49,9 @@ scanner_batch_size = 10
 aws ec2 create-key-pair \
   --key-name strac-scanner-bastion-key \
   --query 'KeyMaterial' \
-  --output text > ~/strac-scanner-bastion-key.pem
+  --output text > ~/.ssh/strac-scanner-bastion-key.pem
 
-chmod 400 ~/strac-scanner-bastion-key.pem
+chmod 400 ~/.ssh/strac-scanner-bastion-key.pem
 ```
 
 ### 3. Deploy Infrastructure (Stage 1: Core Infrastructure)
