@@ -1,3 +1,29 @@
+# Security Group for RDS Proxy (defined first so RDS SG can reference it)
+resource "aws_security_group" "rds_proxy" {
+  name        = "${var.project_name}-rds-proxy-sg"
+  description = "Security group for RDS Proxy"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = var.allowed_security_groups
+    description     = "PostgreSQL from ECS tasks and bastion"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.project_name}-rds-proxy-sg"
+  }
+}
+
 # Security Group for RDS
 resource "aws_security_group" "rds" {
   name        = "${var.project_name}-rds-sg"
@@ -9,7 +35,16 @@ resource "aws_security_group" "rds" {
     to_port         = 5432
     protocol        = "tcp"
     security_groups = var.allowed_security_groups
-    description     = "PostgreSQL from ECS tasks"
+    description     = "PostgreSQL from ECS tasks and bastion"
+  }
+
+  # Allow RDS Proxy to connect to RDS
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.rds_proxy.id]
+    description     = "PostgreSQL from RDS Proxy"
   }
 
   egress {
@@ -102,31 +137,6 @@ resource "aws_db_proxy_target" "main" {
   target_group_name      = "default"
 }
 
-# Security Group for RDS Proxy
-resource "aws_security_group" "rds_proxy" {
-  name        = "${var.project_name}-rds-proxy-sg"
-  description = "Security group for RDS Proxy"
-  vpc_id      = var.vpc_id
-
-  ingress {
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = var.allowed_security_groups
-    description     = "PostgreSQL from ECS tasks"
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.project_name}-rds-proxy-sg"
-  }
-}
 
 # Secrets Manager Secret for RDS Proxy
 resource "aws_secretsmanager_secret" "rds_proxy" {

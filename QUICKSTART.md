@@ -110,14 +110,25 @@ terraform apply  # Creates Lambda and remaining resources
 
 ### 6. Initialize Database
 
-After Terraform completes successfully:
+After Terraform completes successfully, initialize the database schema:
 
 ```bash
-# Get RDS endpoint
-RDS_ENDPOINT=$(terraform output -raw rds_proxy_endpoint | cut -d: -f1)
+cd /home/peterjiang/strac_demo
+./init_database.sh
+```
 
-# Connect and run schema
-psql -h $RDS_ENDPOINT -U scanner_admin -d scanner_db -f database_schema.sql
+This script will:
+- Automatically read credentials from `terraform.tfvars`
+- Get RDS endpoint from Terraform outputs
+- Test database connectivity
+- Create all required tables (jobs, job_objects, findings)
+- Verify tables were created successfully
+
+**Manual method** (if you prefer):
+```bash
+cd terraform
+RDS_ENDPOINT=$(terraform output -raw rds_proxy_endpoint | cut -d: -f1)
+psql -h $RDS_ENDPOINT -U strac_admin -d scanner_db -f database_schema.sql
 # Enter password when prompted
 ```
 

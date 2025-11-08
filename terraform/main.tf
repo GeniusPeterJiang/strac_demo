@@ -206,7 +206,11 @@ module "rds" {
   max_allocated_storage   = var.rds_max_allocated_storage
   master_username         = var.rds_master_username
   master_password         = var.rds_master_password
-  allowed_security_groups = [aws_security_group.ecs.id]
+  # Allow connections from ECS tasks and bastion host (if enabled)
+  allowed_security_groups = concat(
+    [aws_security_group.ecs.id],
+    var.enable_bastion ? [module.bastion[0].security_group_id] : []
+  )
 }
 
 module "sqs" {

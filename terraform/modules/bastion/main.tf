@@ -123,3 +123,8 @@ output "instance_id" {
   description = "Bastion instance ID"
 }
 
+output "security_group_id" {
+  value       = aws_security_group.bastion.id
+  description = "Bastion security group ID"
+}
+
