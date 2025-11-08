@@ -250,14 +250,16 @@ module "ecs" {
 module "api" {
   source = "./modules/api"
 
-  project_name      = var.project_name
-  sqs_queue_url     = module.sqs.scan_jobs_queue_url
-  sqs_queue_arn     = module.sqs.scan_jobs_queue_arn
-  rds_proxy_endpoint = module.rds.rds_proxy_endpoint
+  project_name        = var.project_name
+  sqs_queue_url       = module.sqs.scan_jobs_queue_url
+  sqs_queue_arn       = module.sqs.scan_jobs_queue_arn
+  rds_proxy_endpoint  = module.rds.rds_proxy_endpoint
   rds_master_username = var.rds_master_username
   rds_master_password = var.rds_master_password
-  log_group_name    = "/aws/lambda/${var.project_name}-api"
-  ecr_repository_url = aws_ecr_repository.lambda_api.repository_url
+  log_group_name      = "/aws/lambda/${var.project_name}-api"
+  ecr_repository_url  = aws_ecr_repository.lambda_api.repository_url
+  subnet_ids          = module.vpc.private_subnet_ids
+  security_group_ids  = [aws_security_group.ecs.id]
 }
 
 module "bastion" {
