@@ -75,16 +75,17 @@ done
 
 ## GET /jobs/{job_id} - Check Status
 
-### Get Job Status
+### Get Job Status (Cached - Default, Fast)
 
 ```bash
 # Save job_id from scan response
 JOB_ID="abc-123-def-456"
 
+# Default: uses cached data from materialized view (fast)
 curl "${API_URL}/jobs/${JOB_ID}" | jq .
 ```
 
-**Response:**
+**Response (Cached):**
 ```json
 {
   "job_id": "abc-123-def-456",
@@ -102,7 +103,40 @@ curl "${API_URL}/jobs/${JOB_ID}" | jq .
   "succeeded": 5000,
   "failed": 0,
   "total_findings": 123,
-  "progress_percent": 50.0
+  "progress_percent": 50.0,
+  "data_source": "cached",
+  "cache_refreshed_at": "2025-11-09T10:04:30Z",
+  "cache_refresh_duration_ms": 920
+}
+```
+
+### Get Job Status (Real-Time - Slower but Fresh)
+
+```bash
+# Add ?real_time=true to get live data (slower for large jobs)
+curl "${API_URL}/jobs/${JOB_ID}?real_time=true" | jq .
+```
+
+**Response (Real-Time):**
+```json
+{
+  "job_id": "abc-123-def-456",
+  "bucket": "strac-scanner-demo-697547269674",
+  "prefix": "test/",
+  "execution_arn": "arn:aws:states:...",
+  "created_at": "2025-11-09T10:00:00Z",
+  "updated_at": "2025-11-09T10:05:15Z",
+  "status": "processing",
+  "status_message": "Scanning objects (5250/10000)",
+  "step_function_status": "SUCCEEDED",
+  "total": 10000,
+  "queued": 2750,
+  "processing": 2000,
+  "succeeded": 5250,
+  "failed": 0,
+  "total_findings": 128,
+  "progress_percent": 52.5,
+  "data_source": "real_time"
 }
 ```
 

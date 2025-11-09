@@ -79,3 +79,18 @@ output "step_function_name" {
   description = "Step Functions state machine name"
   value       = module.step_functions.state_machine_name
 }
+
+output "refresh_lambda_arn" {
+  description = "Refresh Lambda function ARN"
+  value       = module.refresh_lambda.lambda_function_arn
+}
+
+output "refresh_lambda_ecr_url" {
+  description = "ECR repository URL for refresh Lambda"
+  value       = module.refresh_lambda.ecr_repository_url
+}
+
+output "refresh_eventbridge_rule" {
+  description = "EventBridge rule name for refresh schedule"
+  value       = module.refresh_lambda.eventbridge_rule_name
+}

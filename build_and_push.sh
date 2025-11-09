@@ -40,11 +40,15 @@ fi
 
 # Fix: Properly construct Lambda repo URL
 LAMBDA_REPO=$(echo $SCANNER_REPO | sed 's/strac-scanner-scanner/strac-scanner-lambda-api/')
+REFRESH_LAMBDA_REPO=$(terraform output -raw refresh_lambda_ecr_url 2>/dev/null)
 AWS_REGION=$(echo $SCANNER_REPO | cut -d'.' -f4)
 
-echo "✓ Scanner ECR: $SCANNER_REPO"
-echo "✓ Lambda ECR:  $LAMBDA_REPO"
-echo "✓ Region:      $AWS_REGION"
+echo "✓ Scanner ECR:       $SCANNER_REPO"
+echo "✓ Lambda API ECR:    $LAMBDA_REPO"
+if [ ! -z "$REFRESH_LAMBDA_REPO" ]; then
+    echo "✓ Refresh Lambda ECR: $REFRESH_LAMBDA_REPO"
+fi
+echo "✓ Region:            $AWS_REGION"
 echo ""
 
 # Login to ECR
@@ -115,6 +119,36 @@ fi
 echo "✓ Lambda API image pushed: $LAMBDA_REPO:latest"
 echo ""
 
+# Build and push Refresh Lambda image (if exists)
+if [ ! -z "$REFRESH_LAMBDA_REPO" ]; then
+    echo "🏗️  Building Refresh Lambda Docker image..."
+    echo "   Directory: $SCRIPT_DIR/lambda_refresh"
+    cd "$SCRIPT_DIR/lambda_refresh"
+    
+    if ! docker build -t lambda-refresh:latest . 2>&1 | tail -10; then
+        echo "❌ Error: Refresh Lambda image build failed."
+        echo "   Check Dockerfile in: $SCRIPT_DIR/lambda_refresh"
+        exit 1
+    fi
+    echo "✓ Refresh Lambda image built successfully"
+    echo ""
+    
+    echo "📤 Pushing Refresh Lambda image to ECR..."
+    echo "   Target: $REFRESH_LAMBDA_REPO:latest"
+    docker tag lambda-refresh:latest $REFRESH_LAMBDA_REPO:latest
+    
+    if ! docker push $REFRESH_LAMBDA_REPO:latest 2>&1 | grep -E "(Pushed|digest:)"; then
+        echo "❌ Error: Refresh Lambda image push failed."
+        exit 1
+    fi
+    echo "✓ Refresh Lambda image pushed: $REFRESH_LAMBDA_REPO:latest"
+    echo ""
+else
+    echo "ℹ️  Skipping Refresh Lambda (not deployed yet)"
+    echo "   Run migration 002_optimize_for_scale.sql and terraform apply to enable"
+    echo ""
+fi
+
 # Update ECS service
 echo "🔄 Updating ECS service..."
 cd "$SCRIPT_DIR/terraform"
@@ -141,8 +175,8 @@ else
 fi
 echo ""
 
-# Update Lambda function
-echo "🔄 Updating Lambda function..."
+# Update Lambda API function
+echo "🔄 Updating Lambda API function..."
 LAMBDA_FUNC=$(terraform output -raw lambda_api_function_name 2>/dev/null)
 
 if [ -z "$LAMBDA_FUNC" ]; then
@@ -157,7 +191,13 @@ else
         --image-uri $LAMBDA_REPO:latest \
         --region $AWS_REGION \
         --no-cli-pager 2>&1; then
-        echo "✓ Lambda function updated successfully"
+        echo "✓ Lambda API function updated successfully"
+        
+        # Wait for update to complete
+        echo "   Waiting for update to complete..."
+        aws lambda wait function-updated \
+            --function-name $LAMBDA_FUNC \
+            --region $AWS_REGION 2>/dev/null || true
     else
         echo "⚠️  Warning: Lambda function update failed"
         echo "   This is expected if the Lambda function doesn't exist yet"
@@ -166,14 +206,74 @@ else
 fi
 echo ""
 
+# Update Refresh Lambda function (if exists)
+if [ ! -z "$REFRESH_LAMBDA_REPO" ]; then
+    echo "🔄 Updating Refresh Lambda function..."
+    REFRESH_LAMBDA_FUNC=$(terraform output -raw refresh_lambda_arn 2>/dev/null | awk -F: '{print $NF}')
+    
+    if [ -z "$REFRESH_LAMBDA_FUNC" ]; then
+        echo "⚠️  Warning: Could not get Refresh Lambda function name."
+        echo "   Run 'terraform apply' to create the refresh Lambda first"
+    else
+        echo "   Function: $REFRESH_LAMBDA_FUNC"
+        echo "   Image: $REFRESH_LAMBDA_REPO:latest"
+        
+        if aws lambda update-function-code \
+            --function-name $REFRESH_LAMBDA_FUNC \
+            --image-uri $REFRESH_LAMBDA_REPO:latest \
+            --region $AWS_REGION \
+            --no-cli-pager 2>&1; then
+            echo "✓ Refresh Lambda function updated successfully"
+            
+            # Wait for update to complete
+            echo "   Waiting for update to complete..."
+            aws lambda wait function-updated \
+                --function-name $REFRESH_LAMBDA_FUNC \
+                --region $AWS_REGION 2>/dev/null || true
+            
+            # Test the refresh Lambda
+            echo "   Testing refresh Lambda..."
+            TEST_RESULT=$(aws lambda invoke \
+                --function-name $REFRESH_LAMBDA_FUNC \
+                --region $AWS_REGION \
+                --payload '{"source":"deployment-test"}' \
+                /tmp/refresh_test_output.json 2>&1 || echo "")
+            
+            if [ -f /tmp/refresh_test_output.json ]; then
+                echo "   ✓ Test invocation successful"
+                rm -f /tmp/refresh_test_output.json
+            fi
+        else
+            echo "⚠️  Warning: Refresh Lambda function update failed"
+        fi
+    fi
+    echo ""
+fi
+
 echo "========================================"
-echo "✅ Docker Images Pushed to ECR!"
+echo "✅ Build and Deploy Complete!"
 echo "========================================"
 echo ""
 echo "Images successfully pushed:"
-echo "  • Scanner: $SCANNER_REPO:latest"
-echo "  • Lambda:  $LAMBDA_REPO:latest"
+echo "  • Scanner:       $SCANNER_REPO:latest"
+echo "  • API Lambda:    $LAMBDA_REPO:latest"
+if [ ! -z "$REFRESH_LAMBDA_REPO" ]; then
+    echo "  • Refresh Lambda: $REFRESH_LAMBDA_REPO:latest"
+fi
 echo ""
+
+echo "Services updated:"
+if [ ! -z "$CLUSTER" ] && [ ! -z "$SERVICE" ]; then
+    echo "  ✓ ECS Service: $SERVICE"
+fi
+if [ ! -z "$LAMBDA_FUNC" ]; then
+    echo "  ✓ API Lambda: $LAMBDA_FUNC"
+fi
+if [ ! -z "$REFRESH_LAMBDA_FUNC" ]; then
+    echo "  ✓ Refresh Lambda: $REFRESH_LAMBDA_FUNC (auto-refreshes every 1 min)"
+fi
+echo ""
+
 echo "Next steps:"
 if [ -z "$LAMBDA_FUNC" ]; then
     echo "1. Complete infrastructure deployment:"
@@ -182,13 +282,31 @@ if [ -z "$LAMBDA_FUNC" ]; then
     echo "2. Initialize database:"
     echo "   cd $SCRIPT_DIR && ./init_database.sh"
     echo ""
-    echo "3. Test the API:"
+    echo "3. Apply database optimizations (optional):"
+    echo "   ./migrate_database.sh 002_optimize_for_scale.sql"
+    echo ""
+    echo "4. Test the API:"
     echo "   API_URL=\$(cd terraform && terraform output -raw api_gateway_url)"
     echo "   curl \$API_URL"
 else
-    echo "1. Monitor ECS tasks: aws ecs list-tasks --cluster $CLUSTER"
-    echo "2. Check Lambda logs: aws logs tail /aws/lambda/$LAMBDA_FUNC --follow"
-    echo "3. Test the API: API_URL=\$(cd terraform && terraform output -raw api_gateway_url) && curl \$API_URL"
+    echo "1. Monitor services:"
+    echo "   • ECS tasks: aws ecs list-tasks --cluster $CLUSTER"
+    echo "   • API Lambda: aws logs tail /aws/lambda/$LAMBDA_FUNC --follow"
+    if [ ! -z "$REFRESH_LAMBDA_FUNC" ]; then
+        echo "   • Refresh Lambda: aws logs tail /aws/lambda/$REFRESH_LAMBDA_FUNC --follow"
+    fi
+    echo ""
+    echo "2. Test the API:"
+    echo "   API_URL=\$(cd terraform && terraform output -raw api_gateway_url)"
+    echo "   curl \$API_URL/jobs/{job_id}"
+    if [ ! -z "$REFRESH_LAMBDA_FUNC" ]; then
+        echo ""
+        echo "3. Check cached status (fast):"
+        echo "   curl \$API_URL/jobs/{job_id}"
+        echo ""
+        echo "4. Check real-time status (fresh):"
+        echo "   curl \$API_URL/jobs/{job_id}?real_time=true"
+    fi
 fi
 echo ""
 

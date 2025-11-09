@@ -287,3 +287,16 @@ module "bastion" {
   key_pair_name      = "strac-scanner-bastion-key" # Create this key pair first
 }
 
+# Materialized View Refresh Lambda + EventBridge
+module "refresh_lambda" {
+  source = "./modules/refresh_lambda"
+
+  project_name             = var.project_name
+  private_subnet_ids       = module.vpc.private_subnet_ids
+  lambda_security_group_id = aws_security_group.ecs.id
+  rds_proxy_endpoint       = module.rds.rds_proxy_endpoint
+  rds_dbname               = "scanner_db"
+  rds_username             = var.rds_master_username
+  rds_password             = var.rds_master_password
+}
+

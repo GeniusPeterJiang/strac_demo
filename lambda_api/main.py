@@ -546,58 +546,128 @@ def get_step_function_status(execution_arn: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def get_job_status(job_id: str) -> Dict[str, Any]:
+def get_job_status(job_id: str, real_time: bool = False) -> Dict[str, Any]:
     """
     Get status of a scan job, including Step Functions execution status.
     
     Args:
         job_id: Job ID
+        real_time: If True, fetch real-time data (slower). If False, use cached data (faster, default)
         
     Returns:
-        Job status dictionary
+        Job status dictionary with 'cache_timestamp' if cached data is used
     """
     conn = None
     try:
         conn = get_db_connection()
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # Get job info including execution_arn
+            # Check if materialized view exists
             cur.execute("""
-                SELECT job_id, bucket, prefix, execution_arn, created_at, updated_at
-                FROM jobs
-                WHERE job_id = %s
-            """, (job_id,))
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_matviews 
+                    WHERE schemaname = 'public' 
+                    AND matviewname = 'job_progress'
+                ) as exists;
+            """)
+            result = cur.fetchone()
+            has_matview = result['exists'] if result else False
             
-            job = cur.fetchone()
+            # Decide whether to use cached or real-time data
+            use_cache = has_matview and not real_time
             
-            if not job:
-                return None
+            if use_cache:
+                # Get last refresh time from tracking table (if it exists)
+                cache_timestamp = None
+                refresh_duration_ms = None
+                try:
+                    cur.execute("""
+                        SELECT last_refreshed_at, refresh_duration_ms
+                        FROM materialized_view_refresh_log
+                        WHERE view_name = 'job_progress';
+                    """)
+                    refresh_info = cur.fetchone()
+                    if refresh_info:
+                        cache_timestamp = refresh_info['last_refreshed_at']
+                        refresh_duration_ms = refresh_info['refresh_duration_ms']
+                except Exception as e:
+                    # Tracking table might not exist (old migration version)
+                    logger.warning(f"Could not query refresh log (table may not exist): {e}")
+                    # Continue without timestamp - still use cached data
+                
+                # Use materialized view (cached, very fast)
+                cur.execute("""
+                    SELECT 
+                        job_id, bucket, prefix, execution_arn, 
+                        created_at, updated_at,
+                        total_objects as total,
+                        queued_count as queued,
+                        processing_count as processing,
+                        succeeded_count as succeeded,
+                        failed_count as failed,
+                        total_findings,
+                        progress_percent
+                    FROM job_progress
+                    WHERE job_id = %s
+                """, (job_id,))
+                
+                result = cur.fetchone()
+                
+                if result:
+                    result = dict(result)
+                    result['data_source'] = 'cached'
+                    result['cache_refreshed_at'] = cache_timestamp
+                    if refresh_duration_ms:
+                        result['cache_refresh_duration_ms'] = refresh_duration_ms
+                else:
+                    # Job not in materialized view yet (very recent job)
+                    # Fall back to real-time query
+                    use_cache = False
             
-            # Get job statistics
-            cur.execute("""
-                SELECT 
-                    COUNT(*) FILTER (WHERE status = 'queued') as queued,
-                    COUNT(*) FILTER (WHERE status = 'processing') as processing,
-                    COUNT(*) FILTER (WHERE status = 'succeeded') as succeeded,
-                    COUNT(*) FILTER (WHERE status = 'failed') as failed,
-                    COUNT(*) as total
-                FROM job_objects
-                WHERE job_id = %s
-            """, (job_id,))
-            
-            stats = cur.fetchone()
-            
-            # Get total findings count
-            cur.execute("""
-                SELECT COUNT(*) as total_findings
-                FROM findings
-                WHERE job_id = %s
-            """, (job_id,))
-            
-            findings_result = cur.fetchone()
-            
-            result = dict(job)
-            result.update(dict(stats) if stats else {})
-            result['total_findings'] = findings_result['total_findings'] if findings_result else 0
+            if not use_cache:
+                # Fall back to direct queries (slower but always up-to-date)
+                cur.execute("""
+                    SELECT job_id, bucket, prefix, execution_arn, created_at, updated_at
+                    FROM jobs
+                    WHERE job_id = %s
+                """, (job_id,))
+                
+                job = cur.fetchone()
+                
+                if not job:
+                    return None
+                
+                # Get job statistics
+                cur.execute("""
+                    SELECT 
+                        COUNT(*) FILTER (WHERE status = 'queued') as queued,
+                        COUNT(*) FILTER (WHERE status = 'processing') as processing,
+                        COUNT(*) FILTER (WHERE status = 'succeeded') as succeeded,
+                        COUNT(*) FILTER (WHERE status = 'failed') as failed,
+                        COUNT(*) as total
+                    FROM job_objects
+                    WHERE job_id = %s
+                """, (job_id,))
+                
+                stats = cur.fetchone()
+                
+                # Get total findings count
+                cur.execute("""
+                    SELECT COUNT(*) as total_findings
+                    FROM findings
+                    WHERE job_id = %s
+                """, (job_id,))
+                
+                findings_result = cur.fetchone()
+                
+                result = dict(job)
+                result.update(dict(stats) if stats else {})
+                result['total_findings'] = findings_result['total_findings'] if findings_result else 0
+                result['data_source'] = 'real_time'
+                
+                # Calculate progress percentage
+                total = result.get('total', 0)
+                completed = (result.get('succeeded', 0) or 0) + (result.get('failed', 0) or 0)
+                result['progress_percent'] = (completed / total * 100) if total > 0 else 0
             
             # Check Step Functions execution status using ARN from database
             execution_arn = result.get('execution_arn')
@@ -649,10 +719,11 @@ def get_job_status(job_id: str) -> Dict[str, Any]:
                     result['status'] = 'processing'
                     result['status_message'] = f'Scanning objects ({completed}/{total})'
             
-            # Calculate progress percentage
-            total = result.get('total', 0)
-            completed = (result.get('succeeded', 0) or 0) + (result.get('failed', 0) or 0)
-            result['progress_percent'] = (completed / total * 100) if total > 0 else 0
+            # Calculate progress percentage if not already present (from materialized view)
+            if 'progress_percent' not in result or result['progress_percent'] is None:
+                total = result.get('total', 0)
+                completed = (result.get('succeeded', 0) or 0) + (result.get('failed', 0) or 0)
+                result['progress_percent'] = (completed / total * 100) if total > 0 else 0
             
             return result
     except Exception as e:
@@ -831,21 +902,27 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 result = create_scan_job_async(bucket, prefix)
                 return create_response(200, result)
             except Exception as e:
-                logger.error(f"Error creating scan job: {e}")
-                return create_response(500, {"error": str(e)})
+                logger.error(f"Error creating scan job: {type(e).__name__}: {e}", exc_info=True)
+                error_message = str(e) if str(e) else f"{type(e).__name__} occurred"
+                return create_response(500, {"error": error_message})
         
         elif http_method == 'GET' and path.startswith('/jobs/'):
             # Get job status
             job_id = path.split('/')[-1]
             
+            # Parse real_time parameter (defaults to False for cached results)
+            real_time_param = query_params.get('real_time', 'false').lower()
+            real_time = real_time_param in ['true', '1', 'yes']
+            
             try:
-                result = get_job_status(job_id)
+                result = get_job_status(job_id, real_time=real_time)
                 if not result:
                     return create_response(404, {"error": "Job not found"})
                 return create_response(200, result)
             except Exception as e:
-                logger.error(f"Error getting job status: {e}")
-                return create_response(500, {"error": str(e)})
+                logger.error(f"Error getting job status for {job_id}: {type(e).__name__}: {e}", exc_info=True)
+                error_message = str(e) if str(e) else f"{type(e).__name__} occurred"
+                return create_response(500, {"error": error_message})
         
         elif http_method == 'GET' and path == '/results':
             # Get results (supports bucket, prefix via key filter, limit, cursor)
@@ -861,8 +938,9 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 result = get_results(job_id, bucket, key, limit, cursor, offset_int)
                 return create_response(200, result)
             except Exception as e:
-                logger.error(f"Error getting results: {e}")
-                return create_response(500, {"error": str(e)})
+                logger.error(f"Error getting results: {type(e).__name__}: {e}", exc_info=True)
+                error_message = str(e) if str(e) else f"{type(e).__name__} occurred"
+                return create_response(500, {"error": error_message})
         
         elif http_method == 'OPTIONS':
             # CORS preflight

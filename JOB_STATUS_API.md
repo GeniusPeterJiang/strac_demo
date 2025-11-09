@@ -4,6 +4,35 @@
 
 The `GET /jobs/{job_id}` endpoint now tracks Step Functions execution status to accurately reflect whether the job is still listing objects or has moved to processing/completed stages.
 
+## Query Parameters
+
+### `real_time` (optional)
+
+Controls whether to use cached or real-time data:
+
+- **Default**: `false` (cached data from materialized view)
+  - ✅ **Fast**: Optimized for large jobs with millions of objects
+  - ✅ **Efficient**: Doesn't query millions of rows on every request
+  - ℹ️ **Staleness**: Data may be up to refresh interval old (default: 1 minute)
+  - 📊 Returns `data_source: "cached"` and `cache_timestamp`
+
+- **`?real_time=true`**: Real-time data from database
+  - ✅ **Fresh**: Always up-to-the-second accurate
+  - ⚠️ **Slower**: For jobs with millions of objects, may take several seconds
+  - 📊 Returns `data_source: "real_time"`
+
+**Examples:**
+```bash
+# Fast cached data (default)
+curl "${API_URL}/jobs/${JOB_ID}"
+
+# Real-time fresh data
+curl "${API_URL}/jobs/${JOB_ID}?real_time=true"
+
+# Explicit cached request
+curl "${API_URL}/jobs/${JOB_ID}?real_time=false"
+```
+
 ## Status Flow
 
 ```
@@ -32,7 +61,7 @@ The `GET /jobs/{job_id}` endpoint now tracks Step Functions execution status to 
 curl "${API_URL}/jobs/abc-123-def"
 ```
 
-**Response:**
+**Response (Cached):**
 ```json
 {
   "job_id": "abc-123-def",
@@ -52,7 +81,11 @@ curl "${API_URL}/jobs/abc-123-def"
   "succeeded": 0,
   "failed": 0,
   "total_findings": 0,
-  "progress_percent": 0
+  "progress_percent": 0,
+  
+  "data_source": "cached",
+  "cache_refreshed_at": "2025-11-09T09:59:30Z",
+  "cache_refresh_duration_ms": 850
 }
 ```
 
@@ -61,6 +94,8 @@ curl "${API_URL}/jobs/abc-123-def"
 - ✅ `step_function_status: "RUNNING"` - Step Functions active
 - ✅ `total` is increasing as more objects are discovered
 - ℹ️ `progress_percent: 0` - Processing hasn't started yet
+- 📊 `cache_refreshed_at` - When this cached data was last updated
+- ⚡ `cache_refresh_duration_ms` - How long the refresh took (850ms = very fast!)
 
 ### 2. Transitioning - Listing Complete, Processing Starting
 
@@ -69,7 +104,7 @@ curl "${API_URL}/jobs/abc-123-def"
 curl "${API_URL}/jobs/abc-123-def"
 ```
 
-**Response:**
+**Response (Cached):**
 ```json
 {
   "job_id": "abc-123-def",
@@ -89,7 +124,11 @@ curl "${API_URL}/jobs/abc-123-def"
   "succeeded": 5000,
   "failed": 0,
   "total_findings": 234,
-  "progress_percent": 5.0
+  "progress_percent": 5.0,
+  
+  "data_source": "cached",
+  "cache_refreshed_at": "2025-11-09T10:04:30Z",
+  "cache_refresh_duration_ms": 920
 }
 ```
 
@@ -107,7 +146,7 @@ curl "${API_URL}/jobs/abc-123-def"
 curl "${API_URL}/jobs/abc-123-def"
 ```
 
-**Response:**
+**Response (Cached):**
 ```json
 {
   "job_id": "abc-123-def",
@@ -126,7 +165,11 @@ curl "${API_URL}/jobs/abc-123-def"
   "succeeded": 48000,
   "failed": 2000,
   "total_findings": 5421,
-  "progress_percent": 50.0
+  "progress_percent": 50.0,
+  
+  "data_source": "cached",
+  "cache_refreshed_at": "2025-11-09T10:14:30Z",
+  "cache_refresh_duration_ms": 1150
 }
 ```
 
@@ -143,7 +186,7 @@ curl "${API_URL}/jobs/abc-123-def"
 curl "${API_URL}/jobs/abc-123-def"
 ```
 
-**Response:**
+**Response (Cached):**
 ```json
 {
   "job_id": "abc-123-def",
@@ -162,7 +205,11 @@ curl "${API_URL}/jobs/abc-123-def"
   "succeeded": 97500,
   "failed": 2500,
   "total_findings": 12543,
-  "progress_percent": 100.0
+  "progress_percent": 100.0,
+  
+  "data_source": "cached",
+  "cache_refreshed_at": "2025-11-09T10:29:30Z",
+  "cache_refresh_duration_ms": 1050
 }
 ```
 
@@ -243,6 +290,82 @@ curl "${API_URL}/jobs/err-456"
 - ❌ `step_function_status: "FAILED"` - Step Functions error
 - ℹ️ Check Step Functions console or CloudWatch logs for details
 - ℹ️ Common causes: S3 permissions, Lambda errors, DB connection issues
+
+## Performance: Cached vs Real-Time
+
+### When to Use Each Mode
+
+| Mode | Best For | Response Time | Data Freshness |
+|------|----------|---------------|----------------|
+| **Cached (default)** | Dashboards, monitoring, frequent polls | <100ms | Up to 1 minute old |
+| **Real-Time** | Critical status checks, debugging | 100ms - 5s+ | Live, exact |
+
+### Performance Comparison
+
+For a job with **1 million objects**:
+
+**Cached Query:**
+```bash
+curl "${API_URL}/jobs/${JOB_ID}"
+```
+- ⚡ Response time: ~50ms
+- 📊 Queries materialized view: 1 row lookup
+- 💰 Database load: Minimal (indexed lookup)
+- ✅ Scales to millions of jobs
+
+**Real-Time Query:**
+```bash
+curl "${API_URL}/jobs/${JOB_ID}?real_time=true"
+```
+- 🐌 Response time: ~3-5 seconds
+- 📊 Queries job_objects: COUNT(*) on 1M rows
+- 💰 Database load: High (aggregation on large table)
+- ⚠️ Can impact database performance under load
+
+### Recommendation
+
+**For most use cases**: Use cached data (default)
+- ✅ Fast and scalable
+- ✅ 1-minute staleness is acceptable for monitoring
+- ✅ Reduces database load
+
+**Use real-time only when**:
+- 🔍 Debugging specific issues
+- 🎯 Need exact, second-by-second accuracy
+- 📈 Verifying cache is working correctly
+
+### Cache Freshness
+
+The materialized view is refreshed every **1 minute** by EventBridge + Lambda.
+
+**New Fields (for cached responses):**
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| `cache_refreshed_at` | Exact timestamp when materialized view was last refreshed | `"2025-11-09T10:29:30Z"` |
+| `cache_refresh_duration_ms` | How long the refresh took (in milliseconds) | `850` (0.85 seconds) |
+| `data_source` | Always `"cached"` when using materialized view | `"cached"` |
+
+**Check data freshness:**
+```bash
+# Get refresh timestamp
+curl "${API_URL}/jobs/${JOB_ID}" | jq '.cache_refreshed_at'
+# Output: "2025-11-09T10:29:30Z"
+
+# Calculate age
+curl "${API_URL}/jobs/${JOB_ID}" | jq -r '.cache_refreshed_at' | \
+  xargs -I {} date -d {} +%s | \
+  awk -v now=$(date +%s) '{print "Data is " (now - $1) " seconds old"}'
+```
+
+**If data is more than 2 minutes old:**
+```bash
+# Check refresh Lambda logs
+aws logs tail /aws/lambda/strac-scanner-refresh-job-progress --since 5m
+
+# Check EventBridge rule status
+aws events describe-rule --name strac-scanner-refresh-job-progress
+```
 
 ## Status Field Values
 
