@@ -295,7 +295,7 @@ class TestMainLoop:
         ]
         
         # Set flag to stop after one iteration
-        def stop_loop():
+        def stop_loop(duration):
             main.shutdown_flag = True
         mock_sleep.side_effect = stop_loop
         
@@ -312,12 +312,15 @@ class TestMainLoop:
     def test_main_loop_handles_empty_queue(self, mock_sleep, mock_receive):
         """Should handle empty queue gracefully."""
         main.shutdown_flag = False
-        mock_receive.return_value = []
         
-        # Stop after one iteration
-        def stop_loop():
-            main.shutdown_flag = True
-        mock_sleep.side_effect = stop_loop
+        # Return empty on first call, then set shutdown flag
+        call_count = [0]
+        def receive_side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] >= 1:
+                main.shutdown_flag = True
+            return []
+        mock_receive.side_effect = receive_side_effect
         
         main.main_loop()
         
@@ -333,7 +336,7 @@ class TestMainLoop:
         
         # Stop after error handling
         call_count = [0]
-        def stop_after_error():
+        def stop_after_error(duration):
             call_count[0] += 1
             if call_count[0] >= 2:
                 main.shutdown_flag = True

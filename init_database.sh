@@ -1,6 +1,7 @@
 #!/bin/bash
 # init_database.sh
-# Automated script to initialize the database schema
+# Initialize database schema for fresh deployments
+# For migrations, run SQL files directly: psql -f terraform/migrations/001_*.sql
 
 set -e
 
@@ -21,6 +22,19 @@ cleanup() {
 
 # Set trap to cleanup on exit (success or failure)
 trap cleanup EXIT
+
+# Parse command line arguments
+if [[ "$1" == "--help" ]] || [[ "$1" == "-h" ]]; then
+    echo "Database Initialization Script"
+    echo ""
+    echo "Usage:"
+    echo "  $0                    # Initialize database schema"
+    echo ""
+    echo "For migrations after initial setup:"
+    echo "  psql -h \$RDS_ENDPOINT -U scanner_admin -d scanner_db -f terraform/migrations/001_*.sql"
+    echo ""
+    exit 0
+fi
 
 echo "========================================"
 echo "Database Initialization"
@@ -84,7 +98,7 @@ fi
 echo "✓ psql found: $(psql --version)"
 echo ""
 
-# Check if schema file exists
+# Check schema file exists
 SCHEMA_FILE="database_schema.sql"
 if [ ! -f "$SCHEMA_FILE" ]; then
     echo "❌ Error: Database schema file not found: $SCHEMA_FILE"
@@ -121,10 +135,6 @@ if ! PGPASSWORD="$RDS_PASSWORD" psql \
     fi
     
     echo "✓ Bastion host found: $BASTION_IP"
-    echo ""
-    echo "RDS is in a private subnet. You need to:"
-    echo "  1. Set up SSH tunnel through bastion host, OR"
-    echo "  2. Run this script from the bastion host"
     echo ""
     echo "Setting up SSH tunnel automatically..."
     echo ""
@@ -182,7 +192,7 @@ if ! PGPASSWORD="$RDS_PASSWORD" psql \
         chmod 400 "$SSH_KEY"
     fi
     
-    # Start SSH tunnel in background - capture stderr
+    # Start SSH tunnel in background
     echo "   Starting SSH tunnel..."
     SSH_OUTPUT=$(ssh -i "$SSH_KEY" \
         -o StrictHostKeyChecking=no \
@@ -234,12 +244,6 @@ if ! PGPASSWORD="$RDS_PASSWORD" psql \
         echo "  2. Verify RDS security group allows connections from bastion"
         echo "  3. Verify bastion can reach RDS (check VPC routing)"
         echo ""
-        echo "Debug: Try manually:"
-        echo "  ssh -i $SSH_KEY -L ${LOCAL_PORT}:$RDS_ENDPOINT:5432 ec2-user@$BASTION_IP"
-        echo "  Then in another terminal:"
-        echo "  PGPASSWORD='YourPasswordHere' psql -h localhost -p $LOCAL_PORT -U $RDS_USERNAME -d scanner_db"
-        echo ""
-        # Tunnel will be cleaned up automatically by trap
         exit 1
     fi
     
@@ -316,8 +320,18 @@ echo "  Database: scanner_db"
 echo "  User: $RDS_USERNAME"
 echo ""
 echo "Next steps:"
-echo "  1. Test the API: cd terraform && terraform output api_gateway_url"
-echo "  2. Upload test data to S3"
-echo "  3. Trigger a scan via API"
+echo "  1. Build and deploy containers:"
+echo "     ./build_and_push.sh"
 echo ""
-
+echo "  2. Test the API:"
+echo "     API_URL=\$(cd terraform && terraform output -raw api_gateway_url)"
+echo "     curl -X POST \"\${API_URL}/scan\" -H \"Content-Type: application/json\" \\"
+echo "       -d '{\"bucket\": \"your-bucket\", \"prefix\": \"test/\"}'"
+echo ""
+echo "Optional: Apply database optimizations (for production/large-scale):"
+echo "  cd terraform"
+echo "  psql -h \$(terraform output -raw rds_proxy_endpoint | cut -d: -f1) \\"
+echo "    -U $RDS_USERNAME -d scanner_db -f migrations/001_add_execution_arn.sql"
+echo "  psql -h \$(terraform output -raw rds_proxy_endpoint | cut -d: -f1) \\"
+echo "    -U $RDS_USERNAME -d scanner_db -f migrations/002_optimize_for_scale.sql"
+echo ""

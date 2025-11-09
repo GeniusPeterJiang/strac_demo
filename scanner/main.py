@@ -97,7 +97,7 @@ def receive_messages(max_messages: int = 10, wait_time: int = 20) -> List[Dict]:
             logger.info(f"Received {len(messages)} messages from queue")
         
         return messages
-    except ClientError as e:
+    except Exception as e:
         logger.error(f"Error receiving messages: {e}")
         return []
 
@@ -140,7 +140,7 @@ def delete_messages(messages: List[Dict]) -> bool:
         
         logger.info(f"Deleted {len(entries)} messages from queue")
         return True
-    except ClientError as e:
+    except Exception as e:
         logger.error(f"Error deleting messages: {e}")
         return False
 
