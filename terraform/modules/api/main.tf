@@ -92,10 +92,20 @@ resource "aws_iam_role_policy" "lambda_api" {
         Effect = "Allow"
         Action = [
           "states:StartExecution",
-          "states:ListExecutions",
-          "states:DescribeExecution"
+          "states:ListExecutions"
         ]
         Resource = var.step_function_arn != "" ? var.step_function_arn : "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "states:DescribeExecution",
+          "states:StopExecution",
+          "states:GetExecutionHistory"
+        ]
+        # Allow access to executions of the state machine
+        # Execution ARN format: arn:aws:states:REGION:ACCOUNT:execution:STATE_MACHINE_NAME:*
+        Resource = var.step_function_arn != "" ? "${replace(var.step_function_arn, ":stateMachine:", ":execution:")}:*" : "*"
       }
     ]
   })

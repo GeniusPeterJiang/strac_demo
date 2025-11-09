@@ -156,7 +156,12 @@ def send_sqs_batch(queue_url: str, batch_objects: List[Dict[str, Any]],
                 'bucket': obj['bucket'],
                 'key': obj['key'],
                 'etag': obj['etag']
-            })
+            }),
+            # Enable SQS Fair Queue feature by setting MessageGroupId to bucket name
+            # This ensures fair processing across different S3 buckets (tenants)
+            # Different buckets represent different teams/projects/applications
+            # This prevents one large bucket from monopolizing processing capacity
+            'MessageGroupId': obj['bucket']
         }
         for j, obj in enumerate(batch_objects)
     ]
