@@ -44,6 +44,17 @@ resource "aws_iam_role_policy" "lambda_api" {
       {
         Effect = "Allow"
         Action = [
+          "ec2:CreateNetworkInterface",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DeleteNetworkInterface",
+          "ec2:AssignPrivateIpAddresses",
+          "ec2:UnassignPrivateIpAddresses"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "s3:ListBucket",
           "s3:GetBucketLocation"
         ]
@@ -101,8 +112,12 @@ resource "aws_lambda_function" "api" {
     }
   }
 
-  image_config {
-    command = ["lambda_api.main.handler"]
+  # Use the CMD from Dockerfile (main.handler)
+  # No image_config needed - let Docker CMD handle it
+
+  vpc_config {
+    subnet_ids         = var.subnet_ids
+    security_group_ids = var.security_group_ids
   }
 
   depends_on = [

@@ -65,3 +65,8 @@ output "lambda_api_function_name" {
   value       = module.api.lambda_function_name
 }
 
+output "s3_bucket_name" {
+  description = "S3 bucket name for test data"
+  value       = aws_s3_bucket.demo.id
+}
+

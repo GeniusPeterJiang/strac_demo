@@ -40,3 +40,13 @@ variable "ecr_repository_url" {
   type        = string
 }
 
+variable "subnet_ids" {
+  description = "Subnet IDs for Lambda VPC configuration"
+  type        = list(string)
+}
+
+variable "security_group_ids" {
+  description = "Security group IDs for Lambda"
+  type        = list(string)
+}
+
