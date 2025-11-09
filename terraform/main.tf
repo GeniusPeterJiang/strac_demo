@@ -64,6 +64,65 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "demo" {
   }
 }
 
+# S3 bucket for web UI static website hosting
+resource "aws_s3_bucket" "webui" {
+  bucket = "${var.project_name}-webui-${var.aws_account_id}"
+
+  tags = {
+    Name = "${var.project_name}-webui"
+  }
+}
+
+resource "aws_s3_bucket_website_configuration" "webui" {
+  bucket = aws_s3_bucket.webui.id
+
+  index_document {
+    suffix = "index.html"
+  }
+
+  error_document {
+    key = "index.html"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "webui" {
+  bucket = aws_s3_bucket.webui.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets  = false
+}
+
+resource "aws_s3_bucket_policy" "webui" {
+  bucket = aws_s3_bucket.webui.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "PublicReadGetObject"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.webui.arn}/*"
+      }
+    ]
+  })
+
+  depends_on = [aws_s3_bucket_public_access_block.webui]
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "webui" {
+  bucket = aws_s3_bucket.webui.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
 # CloudWatch Log Groups
 resource "aws_cloudwatch_log_group" "scanner" {
   name              = "/ecs/${var.project_name}-scanner"

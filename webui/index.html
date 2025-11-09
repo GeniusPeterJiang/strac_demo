@@ -482,6 +482,19 @@
                 <div id="jobStatus"></div>
             </div>
 
+            <!-- Job Status Retrieval Section -->
+            <div class="section">
+                <h2 class="section-title">View Job Status by Job ID</h2>
+                <form id="jobStatusForm">
+                    <div class="form-group">
+                        <label for="jobStatusId">Job ID *</label>
+                        <input type="text" id="jobStatusId" name="jobStatusId" required placeholder="550e8400-e29b-41d4-a716-446655440000">
+                    </div>
+                    <button type="submit" class="btn" id="jobStatusBtn">Load Job Status</button>
+                </form>
+                <div id="jobStatusMessage"></div>
+            </div>
+
             <!-- Direct Findings Retrieval Section -->
             <div class="section">
                 <h2 class="section-title">View Findings by Bucket</h2>
@@ -543,6 +556,9 @@
             // Setup scan form
             document.getElementById('scanForm').addEventListener('submit', handleScanSubmit);
             
+            // Setup job status form
+            document.getElementById('jobStatusForm').addEventListener('submit', handleJobStatusSubmit);
+            
             // Setup findings form
             document.getElementById('findingsForm').addEventListener('submit', handleFindingsSubmit);
         });
@@ -602,6 +618,47 @@
             } finally {
                 scanBtn.disabled = false;
                 scanBtn.textContent = 'Start Scan';
+            }
+        }
+
+        // Handle job status form submission
+        async function handleJobStatusSubmit(e) {
+            e.preventDefault();
+            
+            const jobId = document.getElementById('jobStatusId').value.trim();
+            const jobStatusBtn = document.getElementById('jobStatusBtn');
+            const jobStatusMessage = document.getElementById('jobStatusMessage');
+
+            if (!jobId) {
+                showMessage(jobStatusMessage, 'Job ID is required', 'error');
+                return;
+            }
+
+            jobStatusBtn.disabled = true;
+            jobStatusBtn.textContent = 'Loading...';
+            jobStatusMessage.innerHTML = '';
+
+            try {
+                // Set current job ID and show job status section
+                currentJobId = jobId;
+                localStorage.setItem('currentJobId', currentJobId);
+                
+                // Show job status section
+                document.getElementById('jobStatusSection').style.display = 'block';
+                
+                // Fetch and display job status immediately
+                await updateJobStatus();
+                
+                // Start polling for this job
+                startStatusPolling();
+                
+                showMessage(jobStatusMessage, `Job status loaded for job: ${jobId}`, 'success');
+
+            } catch (error) {
+                showMessage(jobStatusMessage, `Error: ${error.message}`, 'error');
+            } finally {
+                jobStatusBtn.disabled = false;
+                jobStatusBtn.textContent = 'Load Job Status';
             }
         }
 
@@ -686,10 +743,8 @@
                     statusInterval = null;
                 }
 
-                // Reload findings if job is processing or completed
-                if (data.status === 'processing' || data.status === 'completed') {
-                    loadFindings();
-                }
+                // Note: Findings are not auto-refreshed to avoid disrupting user's current view
+                // Users can manually refresh findings or navigate pages to see updates
 
             } catch (error) {
                 console.error('Error updating job status:', error);
@@ -707,7 +762,6 @@
             const failed = data.failed || 0;
             const queued = data.queued || 0;
             const processing = data.processing || 0;
-            const totalFindings = data.total_findings || 0;
 
             container.innerHTML = `
                 <div class="status-card">
@@ -750,10 +804,6 @@
                         <div class="stat-item">
                             <div class="stat-value">${queued.toLocaleString()}</div>
                             <div class="stat-label">Queued</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value">${totalFindings.toLocaleString()}</div>
-                            <div class="stat-label">Total Findings</div>
                         </div>
                     </div>
                 </div>

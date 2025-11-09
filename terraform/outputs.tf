@@ -94,3 +94,13 @@ output "refresh_eventbridge_rule" {
   description = "EventBridge rule name for refresh schedule"
   value       = module.refresh_lambda.eventbridge_rule_name
 }
+
+output "webui_bucket_name" {
+  description = "S3 bucket name for web UI"
+  value       = aws_s3_bucket.webui.id
+}
+
+output "webui_website_url" {
+  description = "Web UI static website URL"
+  value       = "http://${aws_s3_bucket_website_configuration.webui.website_endpoint}"
+}
