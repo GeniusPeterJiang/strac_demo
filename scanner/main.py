@@ -206,10 +206,19 @@ def main_loop():
             results = process_messages(messages)
             
             # Delete successfully processed messages
-            # Only delete messages that succeeded or failed (not retrying)
+            # Only delete messages that succeeded or skipped
+            # Failed messages remain in queue for retry (will become visible after visibility timeout)
+            # Match results to messages by ReceiptHandle (since results may be out of order due to parallel processing)
+            receipt_handle_to_result = {
+                r.get("message_receipt_handle"): r 
+                for r in results 
+                if r.get("message_receipt_handle")
+            }
+            
             messages_to_delete = [
-                msg for msg, result in zip(messages, results)
-                if result.get("status") in ["succeeded", "failed", "skipped"]
+                msg for msg in messages
+                if msg.get("ReceiptHandle") in receipt_handle_to_result
+                and receipt_handle_to_result[msg.get("ReceiptHandle")].get("status") in ["succeeded", "skipped"]
             ]
             
             if messages_to_delete:

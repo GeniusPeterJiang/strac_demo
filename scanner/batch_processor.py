@@ -242,7 +242,8 @@ class BatchProcessor:
                         "bucket": task["bucket"],
                         "key": task["key"],
                         "status": "failed",
-                        "error": str(e)
+                        "error": str(e),
+                        "message_receipt_handle": task["message"].get("ReceiptHandle")
                     })
         
         return results
