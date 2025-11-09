@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S3 Scanner - Web UI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .section {
+            margin-bottom: 40px;
+        }
+
+        .section-title {
+            font-size: 1.5em;
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            word-wrap: break-word;
+            word-break: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .status-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+
+        .status-badge.listing {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-badge.processing {
+            background: #cfe2ff;
+            color: #084298;
+        }
+
+        .status-badge.completed {
+            background: #d1e7dd;
+            color: #0f5132;
+        }
+
+        .status-badge.failed {
+            background: #f8d7da;
+            color: #842029;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e9ecef;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .stat-item {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+
+        .findings-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            table-layout: auto;
+        }
+
+        .findings-table th {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            word-wrap: break-word;
+            word-break: break-word;
+        }
+
+        .findings-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+            word-wrap: break-word;
+            word-break: break-word;
+            overflow-wrap: break-word;
+            max-width: 0;
+        }
+
+        .findings-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .findings-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .detector-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: 600;
+            background: #e7f3ff;
+            color: #0066cc;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .pagination-info {
+            color: #666;
+        }
+
+        .pagination-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .pagination-btn {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #842029;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 10px 0;
+            word-wrap: break-word;
+            word-break: break-word;
+            overflow-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .success {
+            background: #d1e7dd;
+            color: #0f5132;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 10px 0;
+            word-wrap: break-word;
+            word-break: break-word;
+            overflow-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .code-block {
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            word-break: break-all;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            margin: 0;
+            white-space: pre-wrap;
+            color: #333;
+        }
+
+        .auto-refresh-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #28a745;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .context-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: background 0.2s;
+        }
+
+        .context-btn:hover {
+            background: #5568d3;
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            color: #333;
+        }
+
+        .modal-close {
+            background: #f8f9fa;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1.2em;
+            color: #666;
+            transition: all 0.2s;
+        }
+
+        .modal-close:hover {
+            background: #e9ecef;
+            color: #333;
+        }
+
+        .modal-textarea {
+            width: 100%;
+            min-height: 300px;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            resize: vertical;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .modal-textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 S3 Scanner</h1>
+            <p>Scan S3 buckets for sensitive data</p>
+        </div>
+
+        <div class="content">
+            <!-- Scan Section -->
+            <div class="section">
+                <h2 class="section-title">Start New Scan</h2>
+                <form id="scanForm">
+                    <div class="form-group">
+                        <label for="bucket">S3 Bucket Name *</label>
+                        <input type="text" id="bucket" name="bucket" required placeholder="my-bucket">
+                    </div>
+                    <div class="form-group">
+                        <label for="prefix">Prefix (Optional)</label>
+                        <input type="text" id="prefix" name="prefix" placeholder="path/to/files/">
+                    </div>
+                    <button type="submit" class="btn" id="scanBtn">Start Scan</button>
+                </form>
+                <div id="scanMessage"></div>
+            </div>
+
+            <!-- Job Status Section -->
+            <div class="section" id="jobStatusSection" style="display: none;">
+                <h2 class="section-title">
+                    Job Status
+                    <span class="auto-refresh-indicator" id="refreshIndicator"></span>
+                    <span style="font-size: 0.7em; color: #666; font-weight: normal;">Auto-updating every 3 seconds</span>
+                </h2>
+                <div id="jobStatus"></div>
+            </div>
+
+            <!-- Direct Findings Retrieval Section -->
+            <div class="section">
+                <h2 class="section-title">View Findings by Bucket</h2>
+                <form id="findingsForm">
+                    <div class="form-group">
+                        <label for="findingsBucket">S3 Bucket Name *</label>
+                        <input type="text" id="findingsBucket" name="findingsBucket" required placeholder="my-bucket">
+                    </div>
+                    <button type="submit" class="btn" id="findingsBtn">Load Findings</button>
+                </form>
+                <div id="findingsMessage"></div>
+            </div>
+
+            <!-- Findings Section -->
+            <div class="section" id="findingsSection" style="display: none;">
+                <h2 class="section-title">Findings <span id="findingsBucketInfo" style="font-size: 0.7em; color: #666; font-weight: normal;"></span></h2>
+                <div id="findingsContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Context Modal -->
+    <div class="modal-overlay" id="contextModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Context</h3>
+                <button class="modal-close" onclick="closeContextModal()">&times;</button>
+            </div>
+            <textarea class="modal-textarea" id="contextTextarea" readonly></textarea>
+        </div>
+    </div>
+
+    <script>
+        // Configuration - Update this with your API Gateway URL
+        const API_BASE_URL = 'https://j3k85zn5ue.execute-api.us-west-2.amazonaws.com';
+        
+        let currentJobId = null;
+        let currentBucket = null;
+        let statusInterval = null;
+        let findingsPage = 0;
+        let findingsLimit = 20;
+        let findingsCursor = null;
+        let findingsTotal = 0;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            // Check if there's a job ID in localStorage
+            const savedJobId = localStorage.getItem('currentJobId');
+            const savedBucket = localStorage.getItem('currentBucket');
+            if (savedJobId) {
+                currentJobId = savedJobId;
+                if (savedBucket) {
+                    currentBucket = savedBucket;
+                }
+                startStatusPolling();
+                loadFindings();
+            }
+
+            // Setup scan form
+            document.getElementById('scanForm').addEventListener('submit', handleScanSubmit);
+            
+            // Setup findings form
+            document.getElementById('findingsForm').addEventListener('submit', handleFindingsSubmit);
+        });
+
+        // Handle scan form submission
+        async function handleScanSubmit(e) {
+            e.preventDefault();
+            
+            const bucket = document.getElementById('bucket').value.trim();
+            const prefix = document.getElementById('prefix').value.trim();
+            const scanBtn = document.getElementById('scanBtn');
+            const scanMessage = document.getElementById('scanMessage');
+
+            if (!bucket) {
+                showMessage(scanMessage, 'Bucket name is required', 'error');
+                return;
+            }
+
+            scanBtn.disabled = true;
+            scanBtn.textContent = 'Starting Scan...';
+            scanMessage.innerHTML = '';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/scan`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        bucket: bucket,
+                        prefix: prefix || ''
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to start scan');
+                }
+
+                currentJobId = data.job_id;
+                currentBucket = bucket;
+                localStorage.setItem('currentJobId', currentJobId);
+                localStorage.setItem('currentBucket', currentBucket);
+                
+                showMessage(scanMessage, `Scan started! Job ID: ${currentJobId}`, 'success');
+                
+                // Show job status section and start polling
+                document.getElementById('jobStatusSection').style.display = 'block';
+                document.getElementById('findingsSection').style.display = 'block';
+                
+                startStatusPolling();
+                loadFindings();
+
+            } catch (error) {
+                showMessage(scanMessage, `Error: ${error.message}`, 'error');
+            } finally {
+                scanBtn.disabled = false;
+                scanBtn.textContent = 'Start Scan';
+            }
+        }
+
+        // Handle findings form submission
+        async function handleFindingsSubmit(e) {
+            e.preventDefault();
+            
+            const bucket = document.getElementById('findingsBucket').value.trim();
+            const findingsBtn = document.getElementById('findingsBtn');
+            const findingsMessage = document.getElementById('findingsMessage');
+
+            if (!bucket) {
+                showMessage(findingsMessage, 'Bucket name is required', 'error');
+                return;
+            }
+
+            findingsBtn.disabled = true;
+            findingsBtn.textContent = 'Loading...';
+            findingsMessage.innerHTML = '';
+
+            try {
+                // Set current bucket and show findings section
+                currentBucket = bucket;
+                localStorage.setItem('currentBucket', currentBucket);
+                
+                // Reset pagination
+                findingsPage = 0;
+                findingsCursor = null;
+                
+                // Show findings section
+                document.getElementById('findingsSection').style.display = 'block';
+                
+                // Load findings
+                await loadFindings(0, null);
+                
+                showMessage(findingsMessage, `Findings loaded for bucket: ${bucket}`, 'success');
+
+            } catch (error) {
+                showMessage(findingsMessage, `Error: ${error.message}`, 'error');
+            } finally {
+                findingsBtn.disabled = false;
+                findingsBtn.textContent = 'Load Findings';
+            }
+        }
+
+        // Start polling job status
+        function startStatusPolling() {
+            if (statusInterval) {
+                clearInterval(statusInterval);
+            }
+
+            // Poll immediately
+            updateJobStatus();
+
+            // Then poll every 3 seconds
+            statusInterval = setInterval(updateJobStatus, 3000);
+        }
+
+        // Update job status
+        async function updateJobStatus() {
+            if (!currentJobId) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/jobs/${currentJobId}?real_time=true`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to get job status');
+                }
+
+                displayJobStatus(data);
+
+                // Update current bucket from job status if not set
+                if (data.bucket && !currentBucket) {
+                    currentBucket = data.bucket;
+                    localStorage.setItem('currentBucket', currentBucket);
+                }
+
+                // If job is completed or failed, stop polling
+                if (data.status === 'completed' || data.status === 'failed' || data.status === 'aborted') {
+                    clearInterval(statusInterval);
+                    statusInterval = null;
+                }
+
+                // Reload findings if job is processing or completed
+                if (data.status === 'processing' || data.status === 'completed') {
+                    loadFindings();
+                }
+
+            } catch (error) {
+                console.error('Error updating job status:', error);
+            }
+        }
+
+        // Display job status
+        function displayJobStatus(data) {
+            const container = document.getElementById('jobStatus');
+            
+            const statusClass = data.status || 'processing';
+            const progress = data.progress_percent || 0;
+            const total = data.total || 0;
+            const succeeded = data.succeeded || 0;
+            const failed = data.failed || 0;
+            const queued = data.queued || 0;
+            const processing = data.processing || 0;
+            const totalFindings = data.total_findings || 0;
+
+            container.innerHTML = `
+                <div class="status-card">
+                    <div class="status-header">
+                        <div>
+                            <strong>Job ID:</strong> <span class="code-block">${data.job_id}</span>
+                        </div>
+                        <span class="status-badge ${statusClass}">${statusClass.toUpperCase()}</span>
+                    </div>
+                    
+                    <div>
+                        <strong>Bucket:</strong> ${data.bucket}<br>
+                        <strong>Prefix:</strong> ${data.prefix || '(none)'}<br>
+                        <strong>Status Message:</strong> ${data.status_message || 'N/A'}
+                    </div>
+
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${Math.min(progress, 100)}%">
+                            ${progress.toFixed(1)}%
+                        </div>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value">${total.toLocaleString()}</div>
+                            <div class="stat-label">Total Objects</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${succeeded.toLocaleString()}</div>
+                            <div class="stat-label">Succeeded</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${failed.toLocaleString()}</div>
+                            <div class="stat-label">Failed</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${processing.toLocaleString()}</div>
+                            <div class="stat-label">Processing</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${queued.toLocaleString()}</div>
+                            <div class="stat-label">Queued</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${totalFindings.toLocaleString()}</div>
+                            <div class="stat-label">Total Findings</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Load findings with pagination
+        async function loadFindings(page = 0, cursor = null) {
+            if (!currentBucket) {
+                const container = document.getElementById('findingsContainer');
+                container.innerHTML = '<div class="no-data">Bucket information not available. Please start a new scan.</div>';
+                return;
+            }
+
+            // Update bucket info in title
+            const bucketInfo = document.getElementById('findingsBucketInfo');
+            if (bucketInfo) {
+                bucketInfo.textContent = `(Bucket: ${currentBucket})`;
+            }
+
+            const container = document.getElementById('findingsContainer');
+            container.innerHTML = '<div class="loading">Loading findings...</div>';
+
+            try {
+                const params = new URLSearchParams({
+                    bucket: currentBucket,
+                    limit: findingsLimit.toString()
+                });
+
+                if (cursor) {
+                    params.append('cursor', cursor);
+                } else if (page > 0) {
+                    params.append('offset', (page * findingsLimit).toString());
+                }
+
+                const response = await fetch(`${API_BASE_URL}/results?${params}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to get findings');
+                }
+
+                findingsTotal = data.total || 0;
+                findingsCursor = data.next_cursor || null;
+                findingsPage = page;
+
+                displayFindings(data.findings || [], data);
+
+            } catch (error) {
+                container.innerHTML = `<div class="error">Error loading findings: ${error.message}</div>`;
+            }
+        }
+
+        // Display findings
+        function displayFindings(findings, paginationData) {
+            const container = document.getElementById('findingsContainer');
+
+            if (findings.length === 0) {
+                container.innerHTML = '<div class="no-data">No findings yet. The scan may still be in progress.</div>';
+                return;
+            }
+
+            const table = `
+                <table class="findings-table" id="findingsTable">
+                    <thead>
+                        <tr>
+                            <th>Detector</th>
+                            <th>Bucket</th>
+                            <th>Key</th>
+                            <th>Match</th>
+                            <th>Context</th>
+                            <th>Found At</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${findings.map((f, index) => {
+                            const context = f.context || 'N/A';
+                            const contextBase64 = btoa(unescape(encodeURIComponent(context)));
+                            return `
+                            <tr>
+                                <td><span class="detector-badge">${escapeHtml(f.detector || 'N/A')}</span></td>
+                                <td>${escapeHtml(f.bucket || 'N/A')}</td>
+                                <td><span class="code-block">${escapeHtml(f.key || 'N/A')}</span></td>
+                                <td><span class="code-block">${escapeHtml(f.masked_match || 'N/A')}</span></td>
+                                <td>
+                                    <button class="context-btn" data-context="${contextBase64}">
+                                        View Context
+                                    </button>
+                                </td>
+                                <td>${formatDate(f.created_at)}</td>
+                            </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            const pagination = `
+                <div class="pagination">
+                    <div class="pagination-info">
+                        Showing ${findings.length} of ${findingsTotal.toLocaleString()} findings
+                    </div>
+                    <div class="pagination-buttons">
+                        <button class="pagination-btn" 
+                                onclick="loadFindings(${findingsPage - 1}, null)" 
+                                ${findingsPage === 0 ? 'disabled' : ''}>
+                            Previous
+                        </button>
+                        <button class="pagination-btn" 
+                                onclick="loadFindings(${findingsPage + 1}, null)" 
+                                ${!paginationData.has_more ? 'disabled' : ''}>
+                            Next
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = table + pagination;
+            
+            // Attach event listeners to context buttons using event delegation
+            const findingsTable = document.getElementById('findingsTable');
+            if (findingsTable) {
+                findingsTable.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('context-btn')) {
+                        showContextFromButton(e.target);
+                    }
+                });
+            }
+        }
+
+        // Utility functions
+        function showMessage(container, message, type) {
+            container.innerHTML = `<div class="${type}">${escapeHtml(message)}</div>`;
+            setTimeout(() => {
+                container.innerHTML = '';
+            }, 5000);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            return date.toLocaleString();
+        }
+
+        // Context modal functions
+        function showContext(context) {
+            const modal = document.getElementById('contextModal');
+            const textarea = document.getElementById('contextTextarea');
+            textarea.value = context;
+            modal.classList.add('active');
+        }
+
+        function showContextFromButton(button) {
+            const contextBase64 = button.getAttribute('data-context');
+            try {
+                const context = decodeURIComponent(escape(atob(contextBase64)));
+                showContext(context);
+            } catch (e) {
+                // Fallback if base64 decoding fails
+                showContext('Error loading context');
+            }
+        }
+
+        function closeContextModal() {
+            const modal = document.getElementById('contextModal');
+            modal.classList.remove('active');
+        }
+
+        // Close modal when clicking outside or pressing Escape
+        document.addEventListener('DOMContentLoaded', () => {
+            const modal = document.getElementById('contextModal');
+            if (modal) {
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        closeContextModal();
+                    }
+                });
+            }
+
+            // Close modal with Escape key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    closeContextModal();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
