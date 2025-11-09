@@ -143,7 +143,7 @@ resource "aws_appautoscaling_policy" "ecs_sqs_depth" {
         value = split("/", var.sqs_queue_url)[length(split("/", var.sqs_queue_url)) - 1]
       }
     }
-    target_value       = 10.0 # Scale when queue has more than 10 messages per task
+    target_value       = 100.0 # Scale when queue has more than 10 messages per task
     scale_in_cooldown  = 300
     scale_out_cooldown = 60
   }
