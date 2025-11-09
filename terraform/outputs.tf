@@ -70,3 +70,12 @@ output "s3_bucket_name" {
   value       = aws_s3_bucket.demo.id
 }
 
+output "step_function_arn" {
+  description = "Step Functions state machine ARN"
+  value       = module.step_functions.state_machine_arn
+}
+
+output "step_function_name" {
+  description = "Step Functions state machine name"
+  value       = module.step_functions.state_machine_name
+}

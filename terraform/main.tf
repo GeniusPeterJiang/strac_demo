@@ -247,6 +247,18 @@ module "ecs" {
   depends_on = [aws_security_group.ecs]
 }
 
+# Note: Step Functions needs to be created first to get its ARN
+# On first apply, Lambda will be created without Step Function ARN (will use sync mode)
+# Run terraform apply twice:
+#   1st apply: Creates Lambda and Step Functions
+#   2nd apply: Updates Lambda with Step Function ARN
+module "step_functions" {
+  source = "./modules/step_functions"
+
+  project_name        = var.project_name
+  lambda_function_arn = "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${var.project_name}-api"
+}
+
 module "api" {
   source = "./modules/api"
 
@@ -260,6 +272,7 @@ module "api" {
   ecr_repository_url  = aws_ecr_repository.lambda_api.repository_url
   subnet_ids          = module.vpc.private_subnet_ids
   security_group_ids  = [aws_security_group.ecs.id]
+  step_function_arn   = module.step_functions.state_machine_arn
 }
 
 module "bastion" {

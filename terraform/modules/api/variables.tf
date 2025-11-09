@@ -50,3 +50,8 @@ variable "security_group_ids" {
   type        = list(string)
 }
 
+variable "step_function_arn" {
+  description = "Step Functions state machine ARN"
+  type        = string
+  default     = ""
+}

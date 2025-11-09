@@ -87,6 +87,15 @@ resource "aws_iam_role_policy" "lambda_api" {
           "rds-data:BatchExecuteStatement"
         ]
         Resource = "*" # RDS Data API - adjust as needed
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "states:StartExecution",
+          "states:ListExecutions",
+          "states:DescribeExecution"
+        ]
+        Resource = var.step_function_arn != "" ? var.step_function_arn : "*"
       }
     ]
   })
@@ -108,6 +117,7 @@ resource "aws_lambda_function" "api" {
       RDS_PROXY_ENDPOINT = var.rds_proxy_endpoint
       RDS_USERNAME       = var.rds_master_username
       RDS_PASSWORD       = var.rds_master_password
+      STEP_FUNCTION_ARN  = var.step_function_arn
       # AWS_REGION is automatically set by Lambda - don't override it
     }
   }

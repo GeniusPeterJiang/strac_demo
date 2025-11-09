@@ -9,11 +9,13 @@ CREATE TABLE IF NOT EXISTS jobs (
     job_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     bucket TEXT NOT NULL,
     prefix TEXT DEFAULT '',
+    execution_arn TEXT,  -- Step Functions execution ARN (NULL for sync jobs)
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_execution_arn ON jobs(execution_arn) WHERE execution_arn IS NOT NULL;
 
 -- Job objects table (tracks individual S3 objects in a job)
 CREATE TABLE IF NOT EXISTS job_objects (

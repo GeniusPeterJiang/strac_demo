@@ -7,10 +7,11 @@ import json
 import uuid
 import logging
 import boto3
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime, date
 from decimal import Decimal
 from botocore.exceptions import ClientError
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -129,12 +130,297 @@ def prefix_fanout_list(bucket: str, prefix: str = "") -> list:
     # 2. Use prefix fan-out (a-z, 0-9) for parallel listing
     # 3. Use S3 Batch Operations for massive scale
     
-    return list_s3_objects(bucket, prefix, max_keys=100000)
+    # Limit to 200K objects (with parallel SQS, this fits in Lambda timeout)
+    return list_s3_objects(bucket, prefix, max_keys=200000)
 
 
-def create_scan_job(bucket: str, prefix: str = "") -> Dict[str, Any]:
+def send_sqs_batch(queue_url: str, batch_objects: List[Dict[str, Any]], 
+                   job_id: str, batch_index: int) -> int:
     """
-    Create a new scan job and enqueue S3 objects.
+    Send a batch of objects to SQS.
+    
+    Args:
+        queue_url: SQS queue URL
+        batch_objects: List of objects to enqueue (max 10)
+        job_id: Job ID
+        batch_index: Index of this batch (for unique message IDs)
+        
+    Returns:
+        Number of messages successfully sent
+    """
+    entries = [
+        {
+            'Id': f"{batch_index}-{j}",
+            'MessageBody': json.dumps({
+                'job_id': job_id,
+                'bucket': obj['bucket'],
+                'key': obj['key'],
+                'etag': obj['etag']
+            })
+        }
+        for j, obj in enumerate(batch_objects)
+    ]
+    
+    try:
+        response = sqs_client.send_message_batch(
+            QueueUrl=queue_url,
+            Entries=entries
+        )
+        failed_count = len(response.get('Failed', []))
+        success_count = len(entries) - failed_count
+        
+        if failed_count > 0:
+            logger.warning(f"Batch {batch_index}: {failed_count} messages failed to send")
+        
+        return success_count
+    except ClientError as e:
+        logger.error(f"Error sending batch {batch_index} to SQS: {e}")
+        return 0
+
+
+def enqueue_objects_parallel(queue_url: str, job_id: str, objects: List[Dict[str, Any]]) -> int:
+    """
+    Enqueue objects to SQS in parallel.
+    
+    Args:
+        queue_url: SQS queue URL
+        job_id: Job ID
+        objects: List of objects to enqueue
+        
+    Returns:
+        Number of messages successfully sent
+    """
+    messages_sent = 0
+    batch_size = 10  # SQS batch limit
+    max_workers = 20
+    
+    # Split objects into batches
+    batches = []
+    for i in range(0, len(objects), batch_size):
+        batch = objects[i:i + batch_size]
+        batches.append((i // batch_size, batch))
+    
+    # Send batches in parallel
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_batch = {
+            executor.submit(send_sqs_batch, queue_url, batch, job_id, batch_idx): batch_idx
+            for batch_idx, batch in batches
+        }
+        
+        for future in as_completed(future_to_batch):
+            try:
+                sent_count = future.result()
+                messages_sent += sent_count
+            except Exception as e:
+                logger.error(f"Batch raised exception: {e}")
+    
+    return messages_sent
+
+
+def list_and_process_batch(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    Process one batch of S3 objects (called by Step Functions).
+    This function lists a batch of S3 objects, inserts them to DB, and enqueues to SQS.
+    
+    Args:
+        event: {
+            job_id: str,
+            bucket: str,
+            prefix: str,
+            continuation_token: Optional[str],
+            objects_processed: int
+        }
+        
+    Returns:
+        {
+            job_id: str,
+            bucket: str,
+            prefix: str,
+            continuation_token: Optional[str],
+            objects_processed: int,
+            batch_size: int,
+            messages_enqueued: int,
+            done: bool
+        }
+    """
+    job_id = event['job_id']
+    bucket = event['bucket']
+    prefix = event.get('prefix', '')
+    continuation_token = event.get('continuation_token')
+    objects_processed = event.get('objects_processed', 0)
+    
+    batch_limit = 10000  # Process 10K objects per invocation
+    queue_url = os.getenv("SQS_QUEUE_URL")
+    
+    if not queue_url:
+        raise ValueError("SQS_QUEUE_URL environment variable not set")
+    
+    logger.info(f"Processing batch for job {job_id}, objects so far: {objects_processed}")
+    
+    # List S3 objects with pagination
+    objects = []
+    paginator = s3_client.get_paginator('list_objects_v2')
+    
+    pagination_config = {
+        'MaxItems': batch_limit,
+        'PageSize': 1000
+    }
+    
+    params = {
+        'Bucket': bucket,
+        'Prefix': prefix
+    }
+    
+    if continuation_token:
+        params['ContinuationToken'] = continuation_token
+    
+    try:
+        page_iterator = paginator.paginate(**params, PaginationConfig=pagination_config)
+        
+        next_token = None
+        for page in page_iterator:
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    objects.append({
+                        'bucket': bucket,
+                        'key': obj['Key'],
+                        'etag': obj.get('ETag', '').strip('"'),
+                        'size': obj.get('Size', 0)
+                    })
+            
+            # Check for more results
+            if page.get('IsTruncated', False):
+                next_token = page.get('NextContinuationToken')
+        
+        logger.info(f"Listed {len(objects)} objects, has more: {bool(next_token)}")
+        
+    except ClientError as e:
+        logger.error(f"Error listing S3 objects: {e}")
+        raise
+    
+    # Insert objects to database
+    if objects:
+        conn = None
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                insert_query = """
+                    INSERT INTO job_objects (job_id, bucket, key, etag, status, updated_at)
+                    VALUES (%s, %s, %s, %s, 'queued', NOW())
+                    ON CONFLICT DO NOTHING
+                """
+                values = [(job_id, obj['bucket'], obj['key'], obj['etag']) for obj in objects]
+                
+                from psycopg2.extras import execute_batch
+                execute_batch(cur, insert_query, values, page_size=1000)
+            conn.commit()
+            logger.info(f"Inserted {len(objects)} objects to database")
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            logger.error(f"Error inserting objects to DB: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+    
+    # Enqueue to SQS in parallel
+    messages_sent = 0
+    if objects:
+        messages_sent = enqueue_objects_parallel(queue_url, job_id, objects)
+        logger.info(f"Enqueued {messages_sent}/{len(objects)} messages to SQS")
+    
+    # Return state for Step Functions
+    return {
+        'job_id': job_id,
+        'bucket': bucket,
+        'prefix': prefix,
+        'continuation_token': next_token,
+        'objects_processed': objects_processed + len(objects),
+        'batch_size': len(objects),
+        'messages_enqueued': messages_sent,
+        'done': next_token is None
+    }
+
+
+def create_scan_job_async(bucket: str, prefix: str = "") -> Dict[str, Any]:
+    """
+    Create a new scan job and start Step Function for async processing.
+    This supports unlimited objects using continuation tokens.
+    
+    Args:
+        bucket: S3 bucket name
+        prefix: Object key prefix (optional)
+        
+    Returns:
+        Job information dictionary
+    """
+    job_id = str(uuid.uuid4())
+    step_function_arn = os.getenv("STEP_FUNCTION_ARN")
+    
+    if not step_function_arn:
+        # Fallback to synchronous processing if Step Function not configured
+        logger.warning("STEP_FUNCTION_ARN not set, falling back to synchronous processing")
+        return create_scan_job_sync(bucket, prefix)
+    
+    # Start Step Function execution first to get execution ARN
+    try:
+        stepfunctions_client = boto3.client('stepfunctions', region_name=os.getenv('AWS_REGION', 'us-west-2'))
+        execution_response = stepfunctions_client.start_execution(
+            stateMachineArn=step_function_arn,
+            name=f"scan-{job_id}",
+            input=json.dumps({
+                'job_id': job_id,
+                'bucket': bucket,
+                'prefix': prefix,
+                'continuation_token': None,
+                'objects_processed': 0
+            })
+        )
+        
+        execution_arn = execution_response['executionArn']
+        logger.info(f"Started Step Function execution: {execution_arn}")
+    except Exception as e:
+        logger.error(f"Error starting Step Function: {e}")
+        raise
+    
+    # Create job record in database with execution ARN
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO jobs (job_id, bucket, prefix, execution_arn, created_at)
+                VALUES (%s, %s, %s, %s, NOW())
+            """, (job_id, bucket, prefix, execution_arn))
+        conn.commit()
+        logger.info(f"Created job {job_id} for s3://{bucket}/{prefix}")
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        logger.error(f"Error creating job: {e}")
+        # Job record creation failed, but Step Function is already running
+        # This is okay - the job will still process, just harder to track
+        logger.warning(f"Step Function {execution_arn} is running but job record creation failed")
+    finally:
+        if conn:
+            conn.close()
+    
+    return {
+        "job_id": job_id,
+        "bucket": bucket,
+        "prefix": prefix,
+        "status": "listing",
+        "execution_arn": execution_arn,
+        "message": "Job created. Objects are being listed and enqueued asynchronously.",
+        "async": True
+    }
+
+
+def create_scan_job_sync(bucket: str, prefix: str = "") -> Dict[str, Any]:
+    """
+    Create a new scan job and enqueue S3 objects synchronously.
+    Limited to ~200K objects due to Lambda timeout.
     
     Args:
         bucket: S3 bucket name
@@ -186,37 +472,37 @@ def create_scan_job(bucket: str, prefix: str = "") -> Dict[str, Any]:
         if conn:
             conn.close()
     
-    # Enqueue messages to SQS
+    # Enqueue messages to SQS (parallelized for better performance)
     messages_sent = 0
-    batch_size = 10  # SQS batch limit
+    batch_size = 10  # SQS batch limit (AWS maximum)
+    max_workers = 20  # Number of parallel threads
     
+    # Split objects into batches of 10 (SQS limit)
+    batches = []
     for i in range(0, len(objects), batch_size):
         batch = objects[i:i + batch_size]
-        
-        entries = [
-            {
-                'Id': str(j),
-                'MessageBody': json.dumps({
-                    'job_id': job_id,
-                    'bucket': obj['bucket'],
-                    'key': obj['key'],
-                    'etag': obj['etag']
-                })
-            }
-            for j, obj in enumerate(batch)
-        ]
-        
-        try:
-            response = sqs_client.send_message_batch(
-                QueueUrl=queue_url,
-                Entries=entries
-            )
-            messages_sent += len(entries) - len(response.get('Failed', []))
-        except ClientError as e:
-            logger.error(f"Error sending messages to SQS: {e}")
-            # Continue with next batch
+        batches.append((i // batch_size, batch))
     
-    logger.info(f"Created job {job_id} with {messages_sent} messages enqueued")
+    logger.info(f"Enqueueing {len(objects)} objects in {len(batches)} batches using {max_workers} workers")
+    
+    # Send batches in parallel
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all batches
+        future_to_batch = {
+            executor.submit(send_sqs_batch, queue_url, batch, job_id, batch_idx): batch_idx
+            for batch_idx, batch in batches
+        }
+        
+        # Collect results
+        for future in as_completed(future_to_batch):
+            batch_idx = future_to_batch[future]
+            try:
+                sent_count = future.result()
+                messages_sent += sent_count
+            except Exception as e:
+                logger.error(f"Batch {batch_idx} raised an exception: {e}")
+    
+    logger.info(f"Created job {job_id} with {messages_sent}/{len(objects)} messages enqueued")
     
     return {
         "job_id": job_id,
@@ -228,9 +514,41 @@ def create_scan_job(bucket: str, prefix: str = "") -> Dict[str, Any]:
     }
 
 
+def get_step_function_status(execution_arn: str) -> Optional[Dict[str, Any]]:
+    """
+    Get Step Functions execution status by ARN.
+    
+    Args:
+        execution_arn: Step Functions execution ARN
+        
+    Returns:
+        Dict with execution status or None if error
+    """
+    if not execution_arn:
+        return None
+    
+    try:
+        stepfunctions_client = boto3.client('stepfunctions', region_name=os.getenv('AWS_REGION', 'us-west-2'))
+        
+        # Describe execution to get current status
+        response = stepfunctions_client.describe_execution(
+            executionArn=execution_arn
+        )
+        
+        return {
+            'execution_arn': response['executionArn'],
+            'status': response['status'],
+            'start_date': response['startDate'],
+            'stop_date': response.get('stopDate')
+        }
+    except Exception as e:
+        logger.warning(f"Error describing Step Functions execution: {e}")
+        return None
+
+
 def get_job_status(job_id: str) -> Dict[str, Any]:
     """
-    Get status of a scan job.
+    Get status of a scan job, including Step Functions execution status.
     
     Args:
         job_id: Job ID
@@ -242,9 +560,9 @@ def get_job_status(job_id: str) -> Dict[str, Any]:
     try:
         conn = get_db_connection()
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # Get job info
+            # Get job info including execution_arn
             cur.execute("""
-                SELECT job_id, bucket, prefix, created_at, updated_at
+                SELECT job_id, bucket, prefix, execution_arn, created_at, updated_at
                 FROM jobs
                 WHERE job_id = %s
             """, (job_id,))
@@ -280,6 +598,56 @@ def get_job_status(job_id: str) -> Dict[str, Any]:
             result = dict(job)
             result.update(dict(stats) if stats else {})
             result['total_findings'] = findings_result['total_findings'] if findings_result else 0
+            
+            # Check Step Functions execution status using ARN from database
+            execution_arn = result.get('execution_arn')
+            sf_status = get_step_function_status(execution_arn) if execution_arn else None
+            
+            if sf_status:
+                result['step_function_status'] = sf_status['status']
+                result['execution_arn'] = sf_status.get('execution_arn')
+                
+                # Determine overall job status based on Step Functions
+                if sf_status['status'] == 'RUNNING':
+                    result['status'] = 'listing'
+                    result['status_message'] = 'Step Functions is listing S3 objects'
+                elif sf_status['status'] == 'SUCCEEDED':
+                    # Step Functions completed, now check processing status
+                    total = result.get('total', 0)
+                    completed = (result.get('succeeded', 0) or 0) + (result.get('failed', 0) or 0)
+                    
+                    if total == 0:
+                        result['status'] = 'completed'
+                        result['status_message'] = 'No objects found to scan'
+                    elif completed >= total:
+                        result['status'] = 'completed'
+                        result['status_message'] = 'All objects scanned'
+                    else:
+                        result['status'] = 'processing'
+                        result['status_message'] = f'Scanning objects ({completed}/{total})'
+                elif sf_status['status'] == 'FAILED':
+                    result['status'] = 'failed'
+                    result['status_message'] = 'Step Functions execution failed'
+                elif sf_status['status'] == 'TIMED_OUT':
+                    result['status'] = 'failed'
+                    result['status_message'] = 'Step Functions execution timed out'
+                elif sf_status['status'] == 'ABORTED':
+                    result['status'] = 'aborted'
+                    result['status_message'] = 'Step Functions execution was aborted'
+            else:
+                # No Step Functions (sync mode or Step Functions completed long ago)
+                total = result.get('total', 0)
+                completed = (result.get('succeeded', 0) or 0) + (result.get('failed', 0) or 0)
+                
+                if total == 0:
+                    result['status'] = 'completed'
+                    result['status_message'] = 'No objects found to scan'
+                elif completed >= total:
+                    result['status'] = 'completed'
+                    result['status_message'] = 'All objects scanned'
+                else:
+                    result['status'] = 'processing'
+                    result['status_message'] = f'Scanning objects ({completed}/{total})'
             
             # Calculate progress percentage
             total = result.get('total', 0)
@@ -417,16 +785,23 @@ def get_results(job_id: Optional[str] = None, bucket: Optional[str] = None,
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    Lambda handler for API Gateway requests.
+    Lambda handler for API Gateway requests and Step Functions.
     
     Args:
-        event: API Gateway event
+        event: API Gateway event or Step Functions event
         context: Lambda context
         
     Returns:
-        API Gateway response
+        API Gateway response or Step Functions result
     """
     try:
+        # Check if this is a Step Functions invocation (batch processing)
+        if 'job_id' in event and 'bucket' in event:
+            # Called by Step Functions for batch processing
+            logger.info(f"Processing batch for job {event['job_id']}")
+            return list_and_process_batch(event, context)
+        
+        # Otherwise, it's an API Gateway request
         # Parse request
         http_method = event.get('requestContext', {}).get('http', {}).get('method', '')
         path = event.get('rawPath', '')
@@ -445,7 +820,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Route requests
         if http_method == 'POST' and path == '/scan':
-            # Create scan job
+            # Create scan job (async with Step Functions)
             bucket = body.get('bucket')
             prefix = body.get('prefix', '')
             
@@ -453,7 +828,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 return create_response(400, {"error": "bucket is required"})
             
             try:
-                result = create_scan_job(bucket, prefix)
+                result = create_scan_job_async(bucket, prefix)
                 return create_response(200, result)
             except Exception as e:
                 logger.error(f"Error creating scan job: {e}")

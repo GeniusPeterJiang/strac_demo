@@ -125,25 +125,7 @@ resource "aws_appautoscaling_target" "ecs_target" {
   service_namespace  = "ecs"
 }
 
-# Auto Scaling Policy - Based on Queue Depth
-resource "aws_appautoscaling_policy" "ecs_queue_depth" {
-  name               = "${var.project_name}-ecs-queue-depth"
-  policy_type        = "TargetTrackingScaling"
-  resource_id        = aws_appautoscaling_target.ecs_target.resource_id
-  scalable_dimension = aws_appautoscaling_target.ecs_target.scalable_dimension
-  service_namespace  = aws_appautoscaling_target.ecs_target.service_namespace
-
-  target_tracking_scaling_policy_configuration {
-    predefined_metric_specification {
-      predefined_metric_type = "ECSServiceAverageCPUUtilization"
-    }
-    target_value       = 70.0
-    scale_in_cooldown  = 300
-    scale_out_cooldown = 60
-  }
-}
-
-# Custom Auto Scaling Policy - Based on SQS Queue Depth
+# Auto Scaling Policy - Based on SQS Queue Depth
 resource "aws_appautoscaling_policy" "ecs_sqs_depth" {
   name               = "${var.project_name}-ecs-sqs-depth"
   policy_type        = "TargetTrackingScaling"
