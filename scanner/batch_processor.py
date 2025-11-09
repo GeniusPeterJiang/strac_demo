@@ -19,7 +19,7 @@ class BatchProcessor:
     """Processes batches of S3 objects for sensitive data scanning."""
     
     def __init__(self, db: Optional[Database] = None, detector: Optional[Detector] = None,
-                 max_workers: int = 5, max_file_size_mb: int = 100):
+                 max_workers: int = 20, max_file_size_mb: int = 100):
         """
         Initialize batch processor.
         

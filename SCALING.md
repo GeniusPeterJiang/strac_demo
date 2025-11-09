@@ -79,8 +79,8 @@ With Fair Queue:
 ```
 
 **Metrics:**
-- `ApproximateNumberOfMessagesVisible`: Total queue depth
-- `ApproximateNumberOfMessagesVisibleInQuietGroups`: Non-noisy jobs backlog
+- `ApproximateNumberOfMessages`: Total queue depth
+- `ApproximateNumberOfMessagesInQuietGroups`: Non-noisy jobs backlog
 
 **Configuration:** No code changes required; automatically enabled with MessageGroupId.
 
@@ -89,7 +89,7 @@ With Fair Queue:
 **Problem Solved:** Static worker count can't handle variable load.
 
 **Solution:**
-- Target tracking based on SQS `ApproximateNumberOfMessagesVisible`
+- Target tracking based on SQS `ApproximateNumberOfMessages`
 - Target: 10 messages per task
 - Scale-in cooldown: 300 seconds (prevents thrashing)
 

@@ -89,8 +89,8 @@ RDS_DBNAME=scanner_db
 
 # Optional (with defaults)
 AWS_REGION=us-west-2
-BATCH_SIZE=10
-MAX_WORKERS=5
+BATCH_SIZE=40
+MAX_WORKERS=20
 MAX_FILE_SIZE_MB=100
 ```
 
@@ -189,13 +189,13 @@ Check file extension (must be .txt, .csv, .json, or .log) and size (must be < 10
 ## Next Steps
 
 1. ✅ **Local Testing** - Use `./run_local_tests.sh` (you are here)
-2. **AWS Testing** - See `../docs/TESTING.md` for full integration testing
+2. **AWS Testing** - See `../integration_tests/TESTING.md` for full integration testing
 3. **Deployment** - See `../QUICKSTART.md` for AWS deployment
 
 ## Documentation
 
 - **`LOCAL_TESTING.md`** - Detailed local testing guide
-- **`../docs/TESTING.md`** - Full AWS integration testing
+- **`../integration_tests/TESTING.md`** - Full AWS integration testing
 - **`../QUICKSTART.md`** - Quick start deployment guide
 - **`../DEPLOYMENT.md`** - Detailed deployment guide
 - **`../README.md`** - Project overview and architecture

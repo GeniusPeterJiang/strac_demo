@@ -67,7 +67,7 @@ class TestBatchProcessorInitialization:
         with patch('batch_processor.boto3.client') as mock_boto_client:
             processor = BatchProcessor(db=mock_db, detector=mock_detector)
             
-            assert processor.max_workers == 5
+            assert processor.max_workers == 20
             assert processor.max_file_size_mb == 100
             assert processor.max_file_size_bytes == 100 * 1024 * 1024
             mock_boto_client.assert_called_once()

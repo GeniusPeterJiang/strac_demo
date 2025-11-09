@@ -19,8 +19,8 @@ class TestComponentInitialization:
     @patch.dict(os.environ, {
         'SQS_QUEUE_URL': 'https://sqs.us-west-2.amazonaws.com/123456789/test-queue',
         'AWS_REGION': 'us-west-2',
-        'BATCH_SIZE': '10',
-        'MAX_WORKERS': '5',
+        'BATCH_SIZE': '40',
+        'MAX_WORKERS': '20',
         'MAX_FILE_SIZE_MB': '100'
     })
     @patch('main.boto3.client')
@@ -50,7 +50,7 @@ class TestComponentInitialization:
         mock_batch_proc.assert_called_once_with(
             db=mock_db.return_value,
             detector=mock_detector.return_value,
-            max_workers=5,
+            max_workers=20,
             max_file_size_mb=100
         )
         assert main.batch_processor is not None
@@ -80,12 +80,12 @@ class TestComponentInitialization:
         
         main.init_components()
         
-        # Should use defaults: batch_size=10, max_workers=5, max_file_size_mb=100
+        # Should use defaults: batch_size=40, max_workers=20, max_file_size_mb=100
         mock_boto_client.assert_called_once_with('sqs', region_name='us-west-2')
         mock_batch_proc.assert_called_once_with(
             db=mock_db.return_value,
             detector=mock_detector.return_value,
-            max_workers=5,
+            max_workers=20,
             max_file_size_mb=100
         )
 

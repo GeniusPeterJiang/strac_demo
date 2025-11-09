@@ -29,6 +29,8 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed deployment and testing instruc
 
 ## Architecture
 
+### High-Level Overview
+
 ```
 Client → API Gateway → Lambda (listing) → Step Functions (batches)
                            ↓
@@ -39,13 +41,121 @@ Client → API Gateway → Lambda (listing) → Step Functions (batches)
                     RDS PostgreSQL (RDS Proxy)
 ```
 
+### Detailed Message Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 1. API REQUEST                                                              │
+│    POST /scan {"bucket": "my-bucket", "prefix": "path/"}                   │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼────────────────────────────────────────────┐
+│ 2. LAMBDA API (listing)                                                     │
+│    • Creates job record in RDS                                              │
+│    • Invokes Step Functions for async S3 listing                           │
+│    • Returns job_id immediately (no timeout)                               │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼────────────────────────────────────────────┐
+│ 3. STEP FUNCTIONS (S3 Listing)                                              │
+│    • Lists S3 objects in batches (10K per iteration)                       │
+│    • Uses continuation tokens (handles 50M+ objects)                       │
+│    • Parallel SQS enqueueing (20 workers)                                  │
+│    • Enqueues scan tasks to SQS                                            │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼────────────────────────────────────────────┐
+│ 4. SQS QUEUE (Fair Queue with DLQ)                                          │
+│    ┌──────────────────────────────────────────────────────────────┐        │
+│    │ Configuration:                                               │        │
+│    │  • Visibility Timeout: 300s (5 minutes)                      │        │
+│    │  • Max Receive Count: 3 attempts                             │        │
+│    │  • Message Retention: 14 days                                │        │
+│    │  • Long Polling: 20 seconds                                  │        │
+│    │  • MessageGroupId: bucket name (fair queue)                  │        │
+│    └──────────────────────────────────────────────────────────────┘        │
+│                                                                             │
+│    Fair Queue Behavior:                                                    │
+│    • MessageGroupId = S3 bucket name                                       │
+│    • AWS balances delivery across message groups                          │
+│    • Prevents large jobs from starving small jobs                         │
+│    • Example: bucket-prod (10M objects) + bucket-test (100 objects)      │
+│      both get fair share of worker capacity                               │
+│                                                                             │
+│    Retry Logic:                                                            │
+│    1. Worker receives message (visibility timeout starts)                 │
+│    2. If processing fails → message becomes visible again                 │
+│    3. After 3 failed attempts → moved to Dead Letter Queue                │
+│    4. DLQ retention: 14 days for manual inspection                        │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼────────────────────────────────────────────┐
+│ 5. ECS FARGATE WORKERS (Auto-scaling)                                       │
+│    ┌──────────────────────────────────────────────────────────────┐        │
+│    │ Processing Loop:                                             │        │
+│    │  1. Long poll SQS (20s wait, batch of 10 messages)          │        │
+│    │  2. Download S3 objects (parallel)                           │        │
+│    │  3. Scan for sensitive data patterns                         │        │
+│    │  4. Write findings to RDS (via RDS Proxy)                    │        │
+│    │  5. Delete messages from SQS on success                      │        │
+│    │  6. Update job_objects status (queued→processing→succeeded)  │        │
+│    └──────────────────────────────────────────────────────────────┘        │
+│                                                                             │
+│    Performance Optimization:                                              │
+│    • max_workers set to 20 per task (configurable via MAX_WORKERS env)   │
+│    • Previous CPU utilization was only ~5% with max_workers=5            │
+│    • Higher parallelism improves throughput and CPU utilization            │
+│                                                                             │
+│    Auto-scaling Triggers:                                                  │
+│    • Metric: SQS ApproximateNumberOfMessages                        │
+│    • Target: 100 messages per task                                         │
+│    • Min capacity: 1 task                                                  │
+│    • Max capacity: 5-50 tasks (configurable)                               │
+│    • Scale-out: When queue depth > (100 × current tasks)                  │
+│    • Scale-in: 300s cooldown to prevent thrashing                          │
+│                                                                             │
+│    Connection Management:                                                  │
+│    • Connects via RDS Proxy (not direct to RDS)                           │
+│    • Proxy manages connection pooling                                     │
+│    • Supports 1000+ concurrent connections                                │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼────────────────────────────────────────────┐
+│ 6. RDS POSTGRESQL (with RDS Proxy)                                          │
+│    ┌──────────────────────────────────────────────────────────────┐        │
+│    │ Tables:                                                      │        │
+│    │  • jobs: Job metadata (bucket, prefix, status)              │        │
+│    │  • job_objects: Per-object status and progress              │        │
+│    │  • findings: Detected sensitive data (deduplicated)         │        │
+│    └──────────────────────────────────────────────────────────────┘        │
+│                                                                             │
+│    RDS Proxy Benefits:                                                     │
+│    • Connection pooling (handles 50+ ECS tasks)                           │
+│    • Reduces connection overhead                                          │
+│    • Automatic failover for Multi-AZ                                      │
+│    • IAM authentication support                                           │
+│                                                                             │
+│    Performance Optimizations:                                             │
+│    • Materialized view: job_progress_cache                                │
+│    • Refreshed every 1 minute via EventBridge + Lambda                    │
+│    • 6000× faster queries for job status (O(1) vs O(n))                   │
+│    • Handles millions of objects efficiently                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
 **Key Components:**
 - **API Gateway + Lambda**: Trigger scans, query results
 - **Step Functions**: Asynchronous S3 listing with continuation tokens (handles 50M+ objects)
-- **SQS Fair Queue**: Prevents noisy neighbor problems across tenants
+- **SQS Fair Queue**: Prevents noisy neighbor problems across tenants using MessageGroupId
 - **ECS Fargate**: Auto-scaling workers (1-50 tasks) with multi-threaded processing
 - **RDS + Proxy**: Connection pooling, materialized views for fast queries
 - **EventBridge**: Auto-refresh job progress cache every 1 minute
+
+**SQS Reliability Features:**
+- **Visibility Timeout (5 min)**: Prevents duplicate processing while worker scans file
+- **Retry Logic (3 attempts)**: Automatic retries for transient failures (network, S3 throttling)
+- **Dead Letter Queue**: Failed messages preserved for 14 days for debugging
+- **Long Polling (20s)**: Reduces empty receives and API costs
 
 ## API Endpoints
 
@@ -219,7 +329,7 @@ cd scanner/tests
 
 - **[DEVELOPMENT.md](DEVELOPMENT.md)**: Deployment, testing, troubleshooting
 - **[SCALING.md](SCALING.md)**: Capacity analysis, performance data, optimization strategies
-- **[docs/TESTING.md](docs/TESTING.md)**: Comprehensive testing guide
+- **[integration_tests/TESTING.md](integration_tests/TESTING.md)**: Comprehensive integration testing guide
 
 ## Support
 

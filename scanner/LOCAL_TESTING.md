@@ -258,7 +258,7 @@ After local testing succeeds:
    - Configure AWS credentials
    - Upload test files to S3
    - Test with real S3 downloads
-   - See `docs/TESTING.md` for full AWS testing
+   - See `integration_tests/TESTING.md` for full AWS testing
 
 3. **Deploy to AWS**:
    - Follow `QUICKSTART.md` for deployment
@@ -325,5 +325,5 @@ Not covered by local tests (requires AWS):
 - ❌ Auto-scaling behavior
 - ❌ Network reliability
 
-For full integration testing, see `docs/TESTING.md`.
+For full integration testing, see `integration_tests/TESTING.md`.
 

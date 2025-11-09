@@ -52,8 +52,8 @@ def init_components():
     sqs_client = boto3.client('sqs', region_name=aws_region)
     
     # Initialize batch processor
-    batch_size = int(os.getenv("BATCH_SIZE", "10"))
-    max_workers = int(os.getenv("MAX_WORKERS", "5"))
+    batch_size = int(os.getenv("BATCH_SIZE", "40"))
+    max_workers = int(os.getenv("MAX_WORKERS", "20"))
     max_file_size_mb = int(os.getenv("MAX_FILE_SIZE_MB", "100"))
     
     db = Database()
@@ -182,7 +182,7 @@ def main_loop():
     
     logger.info("Starting scanner worker main loop...")
     
-    batch_size = int(os.getenv("BATCH_SIZE", "10"))
+    batch_size = int(os.getenv("BATCH_SIZE", "40"))
     poll_wait_time = 20  # Long polling
     
     consecutive_empty_polls = 0
